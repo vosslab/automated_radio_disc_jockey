@@ -1,0 +1,21 @@
+Radio AI Disc Jockey
+
+I am working on a multifaceted project that I want to wrap using python3
+
+step 1: get a listing of songs from a directory
+
+step 2: randomly select fives song and prompt user to select one
+
+step 3: download content about song: wikipedia page on song, or artist, or if no wikipedia page, go to allmusic or last.fm
+
+step 4: pipe content about song to ollama model with this prompt:
+
+Imagine you're a radio disc jockey introducing the next song on the playlist. In about 3 sentences, start by stating the band and song name clearly. Then, dive into 1-2 fun facts or interesting details about the band, the song, or the album-this could be a cool story about the band's history, the inspiration behind the song, or notable events in the music genre from the year the song was released. Use the details provided in the song's file tags (such as the artist, album name, release year, or any intriguing trivia) to add depth to the introduction. Keep the tone relaxed and informative. After giving those fun details, repeat the band and song name before playing the track.
+
+step 5: use TTS to read aloud the disc jockey
+
+step 6: play song
+
+step 7: randomly select fives song and use ollama to choose most similar song of the five to previously played song
+
+go to step 3 (repeat)
