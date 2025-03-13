@@ -1,3 +1,4 @@
-pygame
 gtts
-wikipedia-api
+mutagen
+pygame
+wikipedia
