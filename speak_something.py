@@ -4,6 +4,7 @@ import io
 import os
 import re
 import time
+import random
 import argparse
 import subprocess
 
@@ -66,19 +67,24 @@ def clean_text(text: str, raw: bool) -> str:
 def text_to_speech(text: str, speed: float = 1.0) -> str:
 	"""
 	Converts text to speech using pyttsx3, saves as WAV, then converts to MP3.
-
-	Args:
-		text (str): Text to be spoken.
-		speed (float): Speech rate multiplier.
-
-	Returns:
-		str: Path to the generated MP3 file.
 	"""
 	raw_wav = "temp_raw.wav"
 	output_mp3 = "temp_raw.mp3"
 
 	print("[INFO] Initializing pyttsx3 engine...")
-	engine = pyttsx3.init()
+	engine = pyttsx3.init(driverName='nsss')
+
+	# List available voices and filter for English
+	voices = engine.getProperty("voices")
+	english_voices = [voice.id for voice in voices if any(lang in voice.id for lang in ["en-", "en_", "en."])]
+
+	if not english_voices:
+		raise RuntimeError("[ERROR] No English voices found!")
+
+	# Select a random English voice
+	selected_voice = random.choice(english_voices)
+	engine.setProperty("voice", selected_voice)
+	print(f"[INFO] Using voice: {selected_voice}")
 
 	# Set speed (default ~150 WPM, adjust based on speed multiplier)
 	target_wpm = int(150 * speed)
@@ -174,7 +180,7 @@ def main():
 	parser.add_argument("-f", "--file", type=str, help="File containing text to speak.")
 	parser.add_argument("-i", "--interactive", action="store_true", help="Enter interactive multiline input mode.")
 	parser.add_argument("-s", "--save", action="store_true", help="Save speech to 'output.mp3'.")
-	parser.add_argument("--speed", type=float, default=1.25, help="Playback speed multiplier (e.g., 1.3 for faster speech).")
+	parser.add_argument("--speed", type=float, default=1.0, help="Playback speed multiplier (e.g., 1.3 for faster speech).")
 	parser.add_argument("--raw", action="store_true", help="Disable text cleaning.")
 
 	args = parser.parse_args()
