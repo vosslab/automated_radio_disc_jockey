@@ -132,14 +132,18 @@ class Metadata:
 			print(f"Song '{self.title}' not found on Wikipedia.")
 
 		# Modify artist search query if the name is short (3 characters or fewer)
-		artist_query = f"the artist {self.artist}" if len(self.artist) <= 3 else self.artist
-		# Fetch artist info
+		artist_query = f"the artist {self.artist}"
+		# Try searching with "the artist" first
 		try:
-			self.artist_summary, self.artist_url, _ = self.search_wikipedia(artist_query)
-		except wikipedia.exceptions.DisambiguationError as e:
-			print(f"Disambiguation error for artist '{self.artist}': {e}")
-		except wikipedia.exceptions.PageError:
-			print(f"Artist '{self.artist}' not found on Wikipedia.")
+			_, self.artist_url, self.artist_summary = self.search_wikipedia(artist_query)
+		except:
+			# If that fails, try searching with just the artist's name
+			try:
+				_, self.artist_url, self.artist_summary = self.search_wikipedia(self.artist)
+			except wikipedia.exceptions.DisambiguationError as e:
+				print(f"Disambiguation error for artist '{self.artist}': {e}")
+			except wikipedia.exceptions.PageError:
+				print(f"Artist '{self.artist}' not found on Wikipedia.")
 
 		# Skip album lookup if it's a compilation
 		if self.is_compilation:
@@ -177,7 +181,7 @@ class Metadata:
 
 		dj_prompt = (
 			f"You're a charismatic, knowledgeable radio DJ hosting an indie rock and alternative music show "
-			f"for a station in {suburb}, a suburb of Chicago. Your intros blend deep knowledge, casual banter, "
+			f"for a small station in {suburb}, Illinois. Your intros blend deep knowledge, casual banter, "
 			f"and fun trivia, making every track feel special. You introduce each song like it's a story, setting "
 			f"the scene and engaging listeners.\n\n"
 
