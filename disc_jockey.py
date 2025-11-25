@@ -68,36 +68,35 @@ class DiscJockey:
 		self.history = HistoryLogger()
 		self.model_name = llm_wrapper.select_ollama_model()
 
+	#============================================
 	def log_intro(self, song: audio_utils.Song, intro: str) -> None:
 		self.history.log(song.path, intro)
 
+	#============================================
 	def choose_next(self, last_song: audio_utils.Song) -> audio_utils.Song | None:
-		path = next_song_selector.choose_next_song(
+		next_song = next_song_selector.choose_next_song(
 			last_song,
 			self.song_paths,
 			self.args.sample_size,
 			self.model_name,
 		)
-		if not path:
-			return None
-		# path may already be a Song in some cases; normalize
-		if isinstance(path, audio_utils.Song):
-			return path
-		return audio_utils.Song(path)
+		if isinstance(next_song, audio_utils.Song):
+			return next_song
+		#recursive
+		return self.choose_next(last_song)
 
+	#============================================
 	def prepare_next_async(self, last_song: audio_utils.Song) -> None:
 		next_song = self.choose_next(last_song)
-		if next_song:
-			print(f"{Colors.OKBLUE}Preparing next song: {os.path.basename(next_song.path)}{Colors.ENDC}")
-			self.queued_intro = song_details_to_dj_intro.prepare_intro_text(
-				next_song,
-				prev_song=last_song,
-				model_name=self.model_name,
-			)
-		else:
-			print(f"{Colors.WARNING}No next song available to prepare.{Colors.ENDC}")
+		print(f"{Colors.OKBLUE}Preparing next song: {os.path.basename(next_song.path)}{Colors.ENDC}")
+		self.queued_intro = song_details_to_dj_intro.prepare_intro_text(
+			next_song,
+			prev_song=last_song,
+			model_name=self.model_name,
+		)
 		self.next_song = next_song
 
+	#============================================
 	def prepare_and_speak_intro(self, song: audio_utils.Song, use_queue: bool) -> None:
 		if use_queue and self.queued_intro:
 			intro_text = self.queued_intro
@@ -117,6 +116,7 @@ class DiscJockey:
 		else:
 			print(f"{Colors.WARNING}No usable intro text; skipping TTS.{Colors.ENDC}")
 
+	#============================================
 	def queue_next_intro(self, next_song: audio_utils.Song | None) -> None:
 		if not next_song:
 			print(f"{Colors.WARNING}No next song available to prepare.{Colors.ENDC}")
@@ -128,6 +128,7 @@ class DiscJockey:
 				model_name=self.model_name,
 			)
 
+	#============================================
 	def run(self) -> None:
 		print(f"{Colors.WARNING}Found {len(self.song_paths)} audio files in {self.args.directory}.{Colors.ENDC}")
 		print(f"{Colors.OKGREEN}Starting with user-selected song: {os.path.basename(self.current_song.path)}{Colors.ENDC}")
@@ -144,14 +145,17 @@ class DiscJockey:
 
 			playback_helpers.wait_for_song_end(self.args.testing)
 			next_thread.join()
+
 			if not self.next_song:
 				print(f"{Colors.FAIL}No next song available. Ending session.{Colors.ENDC}")
 				break
+
 			if self.queued_intro and len(self.queued_intro.strip()) > 5:
 				print(f"{Colors.OKGREEN}Queued intro ready for next track.{Colors.ENDC}")
-		else:
-			print(f"{Colors.WARNING}Next intro missing or too short; will skip TTS for next track.{Colors.ENDC}")
+			else:
+				print(f"{Colors.WARNING}Next intro missing or too short; will skip TTS for next track.{Colors.ENDC}")
 
+			# Handoff to the next track
 			self.previous_song = self.current_song
 			self.current_song = self.next_song
 			self.next_song = None
