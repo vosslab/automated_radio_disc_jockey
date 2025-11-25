@@ -12,7 +12,6 @@ class Colors:
 	WARNING = "\033[93m"
 	FAIL = "\033[91m"
 	ENDC = "\033[0m"
-
 #============================================
 def extract_xml_tag(raw_text: str, tag: str) -> str:
 	"""
@@ -20,7 +19,7 @@ def extract_xml_tag(raw_text: str, tag: str) -> str:
 
 	Args:
 		raw_text (str): LLM output.
-		tag (str): Tag name to extract, for example 'choice' or 'reason'.
+		tag (str): Tag name to extract, for example 'choice' or 'response'.
 
 	Returns:
 		str: Extracted text or empty string if not found.
@@ -32,24 +31,35 @@ def extract_xml_tag(raw_text: str, tag: str) -> str:
 	open_token = f"<{tag}"
 	close_token = f"</{tag}"
 
-	# If there is an opening tag but no closing tag, try to auto close it
-	if open_token in lower and close_token not in lower:
-		raw_text = f"{raw_text}</{tag}>"
-		lower = raw_text.lower()
-
-	pattern = rf"<{tag}\b[^>]*>(.*?)</{tag}\b[^>]*>"
-	matches = re.findall(pattern, raw_text, re.IGNORECASE | re.DOTALL)
-
-	if not matches:
+	# Find last opening tag
+	start_idx = lower.rfind(open_token)
+	if start_idx == -1:
 		return ""
 
-	text = matches[-1].strip()
-	return text
+	# Find '>' that ends the opening tag
+	gt_idx = raw_text.find(">", start_idx)
+	if gt_idx == -1:
+		return ""
+
+	# Look for closing tag after the opening tag
+	close_idx = lower.find(close_token, gt_idx + 1)
+
+	if close_idx == -1:
+		# No closing tag found; tolerate missing end tag and
+		# take everything until the end of the string
+		content = raw_text[gt_idx + 1 :]
+		return content.strip()
+
+	# Normal case: take content between opening '>' and closing tag
+	content = raw_text[gt_idx + 1 : close_idx]
+	return content.strip()
 
 
-# Simple assertion test for the function: 'extract_xml_tag'
-_raw = "<choice>song.mp3</choice><reason>Good flow</reason>"
-assert extract_xml_tag(_raw, "choice") == "song.mp3"
+_raw = "<response>Hello</response>"
+assert extract_xml_tag(_raw, "response") == "Hello"
+
+_raw2 = "<response>\nYou know that Canadian indie rock super-group..."
+assert extract_xml_tag(_raw2, "response").startswith("You know that Canadian")
 
 #============================================
 def get_vram_size_in_gb() -> int | None:
