@@ -56,6 +56,36 @@ def clean_text(text: str, raw: bool) -> str:
 	return text.strip()
 
 #============================================
+def format_intro_for_tts(text: str) -> str:
+	"""
+	Reduce awkward pauses by shortening long sentences and normalizing punctuation.
+
+	Args:
+		text (str): Raw intro text.
+
+	Returns:
+		str: TTS-friendly intro text.
+	"""
+	if not text:
+		return ""
+	normalized = text.replace("—", ". ").replace("..", ".").replace("...", ".")
+	segments = re.split(r"[.!?]", normalized)
+	clean_segments = []
+	for segment in segments:
+		segment = segment.strip()
+		if not segment:
+			continue
+		if " and " in segment:
+			parts = [part.strip() for part in segment.split(" and ") if part.strip()]
+			clean_segments.extend(parts)
+		else:
+			clean_segments.append(segment)
+	result = ". ".join(clean_segments)
+	if not result.endswith("."):
+		result += "."
+	return result
+
+#============================================
 def text_to_speech_pyttsx3(text: str, speed: float) -> str:
 	"""
 	Converts text to speech using pyttsx3 and saves it as a WAV file.
@@ -150,9 +180,9 @@ def speak_text(text: str, engine: str, save: bool, speed: float):
 
 	Args:
 		text (str): Text to be spoken.
-		engine (str): Selected TTS engine (pyttsx3 or gTTS).
-		save (bool): Whether to save the generated speech.
-		speed (float): Playback speed multiplier.
+	engine (str): Selected TTS engine (pyttsx3 or gTTS).
+	save (bool): Whether to save the generated speech.
+	speed (float): Playback speed multiplier.
 	"""
 	pygame.mixer.init()
 

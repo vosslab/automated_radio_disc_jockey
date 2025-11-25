@@ -1,33 +1,70 @@
-# Automated Radio Disc Jockey 🎵🤖  
+# Automated Radio Disc Jockey 🎵🤖
 
-An AI-powered virtual DJ that curates and announces songs like a real radio host, using a combination of music file metadata, web-sourced song information, an LLM-generated introduction, and text-to-speech (TTS) to create a seamless listening experience.
+An AI-powered virtual DJ that curates and announces songs like a real radio host using local music files, Wikipedia/Last.fm lookups, an Ollama LLM prompt, and text-to-speech.
 
-## Features  
-- **Music Curation:** Reads a folder of `.mp3`, `.flac`, `.wav`, or `.ogg` files.  
-- **Smart Selection:** Randomly picks five songs and prompts the user to choose one.  
-- **Song Insights:** Fetches song or artist details from Wikipedia, AllMusic, or Last.fm.  
-- **AI DJ Introduction:** Uses an LLM (e.g., Ollama) to craft a dynamic radio-style intro.  
-- **Text-to-Speech:** Converts the DJ intro into natural-sounding speech.  
-- **Autonomous Playlist Flow:** Selects the next song based on similarity to the previous track.  
+## Features
+- Reads `.mp3`, `.flac`, `.wav`, `.ogg` files from a directory.
+- Samples N songs (default 5) for you to choose; guards against bad input.
+- Gathers song/artist/album info from Wikipedia with Last.fm fallback and AllMusic search links.
+- Builds a DJ-style intro prompt (metadata-aware) and sends it to an Ollama model chosen by detected VRAM/unified memory.
+- Speaks the intro (gTTS/pygame) then plays the track.
+- Suggests the next track based on simple artist/album similarity.
 
-## How It Works  
-1. **Scan Music Directory:** Reads all available songs from a specified folder.  
-2. **User Song Selection:** Randomly chooses five songs and lets the user pick one.  
-3. **Fetch Song Information:** Searches Wikipedia (or alternative sources) for relevant details.  
-4. **AI-Generated DJ Intro:** Uses an LLM to create a 3-sentence radio-style introduction.  
-5. **Text-to-Speech Output:** The DJ intro is read aloud using TTS before the song plays.  
-6. **Play the Song:** The selected track starts playing after the introduction.  
-7. **Smart Auto-Selection:** AI picks the next song from five random choices, selecting the most similar track.  
-8. **Repeat the Process!**  
+## Requirements
+- Python 3.10+
+- System packages: `sox` (for TTS post-processing in `speak_something.py`), `ffmpeg` if you plan to add more codecs.
+- Python packages: `gtts`, `mutagen`, `pygame`, `wikipedia` (install with `pip install -r requirements.txt`).
+- Ollama running locally with the models named in `llm_wrapper.py` (defaults to `llama3.2:1b-instruct-q4_K_M` and scales up with VRAM).
 
-## Setup & Requirements  
-### **Prerequisites:**  
-- Python 3.10+  
-- Required libraries: `pygame`, `gtts`, `wikipedia`, `argparse`, `subprocess`, `random`, `os`, `time`  
-- An LLM model compatible with Ollama for text generation  
-
-### **Installation:**  
+## Setup
 ```bash
-git clone https://github.com/yourusername/Automated_Radio_Disc_Jockey.git
-cd Automated_Radio_Disc_Jockey
 pip install -r requirements.txt
+# optional: brew install sox ffmpeg   # macOS example
+```
+
+Place your music files in a directory you will point the scripts at (defaults are not hard-coded).
+
+## Usage
+- Full DJ loop:
+  ```bash
+  ./disc_jockey.py /path/to/music --sample-size 5
+  # add --no-metadata-prompt to skip detailed metadata prompt building
+  ```
+- Build a DJ prompt for one file:
+  ```bash
+  ./audio_file_to_details.py -i /path/to/song.mp3
+  # add -d for verbose lookups
+  ```
+- Generate a DJ intro for a file or raw text:
+  ```bash
+  ./song_details_to_dj_intro.py -i /path/to/song.mp3
+  # or
+  ./song_details_to_dj_intro.py -t "A paragraph of song info"
+  ```
+- Speak arbitrary text (TTS test):
+  ```bash
+  ./speak_something.py -t "Hello listeners" --engine gtts --speed 1.2
+  ```
+- Shell helpers:
+  - `./get_random_song.sh` selects a random mp3 from `$HOME/Documents/ipod/`.
+  - `./get_details.sh` runs the metadata/prompt builder on that random pick.
+
+## Flow
+1) Scan music directory and sample N songs for user selection.  
+2) Extract metadata, fetch Wikipedia/Last.fm info, and build a DJ prompt.  
+3) Choose an Ollama model based on VRAM/unified memory and generate intro text.  
+4) Speak the intro via TTS, then play the selected track.  
+5) Suggest a similar next track using artist/album overlap.  
+6) Repeat the loop.  
+
+## Notes
+- Metadata parsing for similarity and prompts works best with MP3/FLAC tags; other formats fall back to filenames.
+- If Wikipedia lookups fail, Last.fm wiki pages are tried; otherwise, AllMusic search links are provided.
+- Temporary audio files (e.g., `temp_raw.*`, `dj_intro.mp3`) are created during TTS; clean up as needed.
+
+## Testing individual steps
+- Run `./test_steps.sh` to exercise:
+  1) Metadata lookup
+  2) DJ intro generation
+  3) Next-song selection via LLM
+  4) TTS smoke test
