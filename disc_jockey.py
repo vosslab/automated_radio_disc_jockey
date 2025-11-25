@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
 # Standard Library
-import argparse
 import os
+import time
+import argparse
 import threading
 
 # PIP3 modules
@@ -83,6 +84,8 @@ class DiscJockey:
 		if isinstance(next_song, audio_utils.Song):
 			return next_song
 		#recursive
+		print("FAILED to find a new song, trying again.")
+		time.sleep(1)
 		return self.choose_next(last_song)
 
 	#============================================
