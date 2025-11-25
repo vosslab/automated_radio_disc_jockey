@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import argparse
-import os
 import random
 import re
 import time
@@ -30,6 +29,13 @@ class Metadata:
 	Represents metadata extracted from an audio file.
 	Handles Wikipedia lookups for artist, album, and song.
 	"""
+	#============================================
+	class Colors:
+		OKBLUE = "\033[94m"
+		OKGREEN = "\033[92m"
+		BOLD = "\033[1m"
+		ENDC = "\033[0m"
+
 	#============================================
 	def __init__(self, filename: str, debug: bool = False):
 		"""
@@ -234,14 +240,14 @@ class Metadata:
 		Fetches Wikipedia summaries for the song, album, and artist.
 		Updates the class attributes with the fetched data.
 		"""
-		print(f"{Colors.OKBLUE}Searching Wikipedia for:{Colors.ENDC}\n{self}")
+		print(f"{self.Colors.OKBLUE}Searching Wikipedia for:{self.Colors.ENDC}\n{self}")
 
 		# Fetch song info
 		search_title = self._clean_title(self.title)
-		print(f"{Colors.OKBLUE}Searching song page for '{search_title}'...{Colors.ENDC}")
+		print(f"{self.Colors.OKBLUE}Searching song page for '{search_title}'...{self.Colors.ENDC}")
 		_, self.song_url, self.song_summary = self.search_wikipedia(f"{search_title} song by {self.artist}")
 		if self.song_summary:
-			print(f"{Colors.OKGREEN}Received song summary ({len(self.song_summary)} chars).{Colors.ENDC}")
+			print(f"{self.Colors.OKGREEN}Received song summary ({len(self.song_summary)} chars).{self.Colors.ENDC}")
 		if not self.song_summary:
 			lfm_url, lfm_desc = self._fetch_lastfm_wiki(self.artist, search_title, kind="song")
 			if lfm_desc:
@@ -259,10 +265,10 @@ class Metadata:
 		# Modify artist search query if the name is short (3 characters or fewer)
 		artist_query = f"the artist {self.artist}"
 		# Try searching with "the artist" first
-		print(f"{Colors.OKBLUE}Searching artist page for '{self.artist}'...{Colors.ENDC}")
+		print(f"{self.Colors.OKBLUE}Searching artist page for '{self.artist}'...{self.Colors.ENDC}")
 		_, self.artist_url, self.artist_summary = self.search_wikipedia(artist_query)
 		if self.artist_summary:
-			print(f"{Colors.OKGREEN}Received artist summary ({len(self.artist_summary)} chars).{Colors.ENDC}")
+			print(f"{self.Colors.OKGREEN}Received artist summary ({len(self.artist_summary)} chars).{self.Colors.ENDC}")
 		if not self.artist_summary:
 			_, self.artist_url, self.artist_summary = self.search_wikipedia(self.artist)
 
@@ -287,7 +293,7 @@ class Metadata:
 			print(f"{Colors.OKBLUE}Searching album page for '{self.album}'...{Colors.ENDC}")
 			_, self.album_url, self.album_summary = self.search_wikipedia(f"{self.album} album by {self.artist}")
 			if self.album_summary:
-				print(f"{Colors.OKGREEN}Received album summary ({len(self.album_summary)} chars).{Colors.ENDC}")
+				print(f"{self.Colors.OKGREEN}Received album summary ({len(self.album_summary)} chars).{self.Colors.ENDC}")
 			if not self.album_summary:
 				lfm_url, lfm_desc = self._fetch_lastfm_wiki(self.artist, self.album, kind="album")
 				if lfm_desc:

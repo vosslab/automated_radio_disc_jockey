@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 
-# Standard Library
-import random
 import re
 import subprocess
-import time
 
 #============================================
 class Colors:

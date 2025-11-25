@@ -1,71 +1,79 @@
-# Automated Radio Disc Jockey 🎵🤖
+Automated Radio Disc Jockey
+===========================
 
-An AI-powered virtual DJ that curates and announces songs like a real radio host using local music files, Wikipedia/Last.fm lookups, an Ollama LLM prompt, and text-to-speech.
+Overview
+--------
+An AI-powered virtual DJ that reads local audio files, gathers song/artist/album details, generates a radio-style introduction via an LLM, speaks the intro with TTS, and plays the track. The system also selects subsequent songs using an LLM to keep era/genre/energy consistent.
 
-## Features
+Features
+--------
 - Reads `.mp3`, `.flac`, `.wav`, `.ogg` files from a directory.
-- Samples N songs (default 5) for you to choose; guards against bad input.
-- Gathers song/artist/album info from Wikipedia with Last.fm fallback and AllMusic search links.
-- Builds a DJ-style intro prompt (metadata-aware) and sends it to an Ollama model chosen automatically.
-- Speaks the intro (gTTS/pygame) then plays the track.
-- Suggests the next track based on simple artist/album similarity.
+- Samples N songs for initial choice; subsequent picks are LLM-guided to match energy/tempo without repeating artists back-to-back.
+- Retrieves metadata/summaries from Wikipedia with Last.fm and AllMusic fallbacks.
+- Builds DJ intros via an LLM and speaks them using TTS.
+- Threaded prep for the next song/intro while the current track plays.
 
-## Requirements
+Requirements
+------------
 - Python 3.10+
-- System packages: `sox` (for TTS post-processing in `speak_something.py`), `ffmpeg` if you plan to add more codecs.
-- Python packages: `gtts`, `mutagen`, `pygame`, `wikipedia` (install with `pip install -r requirements.txt`).
-- Ollama running locally; model selection is automatic via `llm_wrapper.py` (defaults to `llama3.2:1b-instruct-q4_K_M` and scales up with VRAM).
+- System: `sox` (for TTS post-processing), `ffmpeg` if additional codecs are needed.
+- Python: `gtts`, `mutagen`, `pygame`, `wikipedia` (`pip install -r requirements.txt`).
+- Ollama running locally; model selection is automatic (`llm_wrapper.py`).
 
-## Setup
-```bash
-pip install -r requirements.txt
-# optional: brew install sox ffmpeg   # macOS example
-```
+Key Modules
+-----------
+- `audio_utils.py`: `Song` class (metadata cache, colored display), song discovery/selection.
+- `audio_file_to_details.py`: fetches Wikipedia/Last.fm/AllMusic summaries for song/artist/album.
+- `llm_wrapper.py`: VRAM/model detection, model selection, LLM query, XML tag extraction.
+- `next_song_selector.py`: LLM-based next-song selection (CLI and library), uses `Song` objects.
+- `song_details_to_dj_intro.py`: builds and runs DJ intro prompts from a `Song` or raw text, returns `<response>` intro.
+- `tts_helpers.py`: TTS utilities (gTTS/pyttsx3 + SoX) and `speak_dj_intro`.
+- `playback_helpers.py`: playback utilities for pygame.
+- `disc_jockey.py`: `DiscJockey` class orchestrates the loop, holds state, runs threaded next-track prep.
 
-Place your music files in a directory you will point the scripts at (defaults are not hard-coded).
-
-## Usage
-- Full DJ loop:
-  ```bash
-  ./disc_jockey.py /path/to/music --sample-size 5
-  # add --no-metadata-prompt to skip detailed metadata prompt building
-  # add --testing to stop songs after ~20s
+Usage
+-----
+- Full loop:
   ```
-- Build a DJ prompt for one file:
-  ```bash
+  ./disc_jockey.py /path/to/music --sample-size 5 --testing
+  ```
+- Metadata lookup:
+  ```
   ./audio_file_to_details.py -i /path/to/song.mp3
-  # add -d for verbose lookups
   ```
-- Generate a DJ intro for a file or raw text:
-  ```bash
+- DJ intro generation:
+  ```
   ./song_details_to_dj_intro.py -i /path/to/song.mp3
   # or
   ./song_details_to_dj_intro.py -t "A paragraph of song info"
   ```
-- Speak arbitrary text (TTS test):
-  ```bash
-  ./speak_something.py -t "Hello listeners" --engine gtts --speed 1.2
+- Next-song selection only:
   ```
-- Shell helpers:
-  - `./get_random_song.sh` selects a random mp3 from `$HOME/Documents/ipod/`.
-  - `./get_details.sh` runs the metadata/prompt builder on that random pick.
+  ./next_song_selector.py -c current.mp3 -d /path/to/music -n 10
+  ```
+- TTS smoke test:
+  ```
+  ./tts_helpers.py -t "Hello listeners" --engine gtts --speed 1.2
+  ```
 
-## Flow
-1) Scan music directory and sample N songs for user selection.  
-2) Extract metadata, fetch Wikipedia/Last.fm info, and build a DJ prompt.  
-3) Choose an Ollama model automatically and generate intro text.  
-4) Speak the intro via TTS, then play the selected track.  
-5) Suggest a similar next track using artist/album overlap.  
-6) Repeat the loop.  
+Flow
+----
+- Scan music directory, sample N songs for user selection (first track only).
+- Extract metadata and fetch Wikipedia/Last.fm/AllMusic info.
+- Choose an Ollama model automatically and generate the DJ intro via LLM.
+- Speak the intro with TTS, then play the track.
+- Select the next track via LLM using era/genre/energy/tempo cues, avoid same-artist repeats.
+- Repeat with threaded prep for the following track.
 
-## Notes
-- Metadata parsing for similarity and prompts works best with MP3/FLAC tags; other formats fall back to filenames.
-- If Wikipedia lookups fail, Last.fm wiki pages are tried; otherwise, AllMusic search links are provided.
-- Temporary audio files (e.g., `temp_raw.*`, `dj_intro.mp3`) are created during TTS; clean up as needed.
+Testing Steps
+-------------
+Run `./test_steps.sh` to exercise:
+1) Metadata lookup
+2) DJ intro generation
+3) Next-song selection via LLM
+4) TTS smoke test
 
-## Testing individual steps
-- Run `./test_steps.sh` to exercise:
-  1) Metadata lookup
-  2) DJ intro generation
-  3) Next-song selection via LLM
-  4) TTS smoke test
+Notes
+-----
+- Metadata-based selection and prompts work best with tagged MP3/FLAC files; other formats fall back to filenames.
+- Temporary audio files (e.g., `temp_raw.*`, `dj_intro.mp3`) are generated during TTS; clean up as needed.

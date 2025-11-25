@@ -3,18 +3,17 @@
 # Standard Library
 import argparse
 import os
-import time
 import threading
 
 # PIP3 modules
-import pygame
 
 # Local repo modules
 import audio_utils
 import llm_wrapper
 import next_song_selector
 import song_details_to_dj_intro
-from speak_something import format_intro_for_tts
+import playback_helpers
+import tts_helpers
 
 #============================================
 # Simple ANSI color helpers
@@ -56,44 +55,6 @@ def parse_args() -> argparse.Namespace:
 	return parser.parse_args()
 
 #============================================
-def _ensure_mixer_initialized() -> None:
-	if not pygame.mixer.get_init():
-		pygame.mixer.init()
-
-#============================================
-def speak_dj_intro(prompt: str, speed: float) -> None:
-	if not prompt or len(prompt.strip()) < 1:
-		print("No intro text to speak; skipping TTS.")
-		return
-	clean_prompt = format_intro_for_tts(prompt)
-	print(f"{Colors.OKCYAN}Speaking intro ({len(clean_prompt)} chars) at {speed}x speed...{Colors.ENDC}")
-	try:
-		from speak_something import speak_text
-		speak_text(clean_prompt, engine="gtts", save=False, speed=speed)
-	except Exception as error:
-		print(f"{Colors.FAIL}TTS playback error: {error}{Colors.ENDC}")
-		return
-	while pygame.mixer.music.get_busy():
-		time.sleep(1)
-
-#============================================
-def play_song(song: audio_utils.Song) -> None:
-	_ensure_mixer_initialized()
-	print(f"{Colors.OKGREEN}Playing song: {os.path.basename(song.path)}{Colors.ENDC}")
-	pygame.mixer.music.load(song.path)
-	pygame.mixer.music.play()
-
-#============================================
-def wait_for_song_end(testing: bool, poll_seconds: float = 1.0, preview_seconds: int = 20) -> None:
-	start_time = time.time()
-	while pygame.mixer.music.get_busy():
-		if testing and (time.time() - start_time) >= preview_seconds:
-			print(f"Testing mode: stopping playback after {preview_seconds} seconds.")
-			pygame.mixer.music.stop()
-			break
-		time.sleep(poll_seconds)
-	print(f"{Colors.OKBLUE}Song finished playing.{Colors.ENDC}")
-
 #============================================
 class DiscJockey:
 	def __init__(self, args: argparse.Namespace):
@@ -103,7 +64,7 @@ class DiscJockey:
 		self.current_song = audio_utils.Song(first_path)
 		self.next_song: audio_utils.Song | None = None
 		self.queued_intro = ""
-		self.previous_title: str | None = None
+		self.previous_song: audio_utils.Song | None = None
 		self.history = HistoryLogger()
 		self.model_name = llm_wrapper.select_ollama_model()
 
@@ -130,7 +91,7 @@ class DiscJockey:
 			print(f"{Colors.OKBLUE}Preparing next song: {os.path.basename(next_song.path)}{Colors.ENDC}")
 			self.queued_intro = song_details_to_dj_intro.prepare_intro_text(
 				next_song,
-				previous_song=self.current_song,
+				prev_song=last_song,
 				model_name=self.model_name,
 			)
 		else:
@@ -144,14 +105,14 @@ class DiscJockey:
 			print(f"{Colors.OKCYAN}Using queued intro for current track.{Colors.ENDC}")
 		else:
 			intro_text = song_details_to_dj_intro.prepare_intro_text(
-				next_song,
-				previous_song=self.current_song,
+				song,
+				prev_song=self.previous_song,
 				model_name=self.model_name,
 			)
 		if intro_text and len(intro_text.strip()) > 5:
 			print(f"{Colors.BOLD}{Colors.OKMAGENTA}DJ Introduction:{Colors.ENDC}")
 			print(f"{Colors.OKCYAN}{intro_text}{Colors.ENDC}")
-			speak_dj_intro(intro_text, self.args.tts_speed)
+			tts_helpers.speak_dj_intro(intro_text, self.args.tts_speed)
 			self.log_intro(song, intro_text)
 		else:
 			print(f"{Colors.WARNING}No usable intro text; skipping TTS.{Colors.ENDC}")
@@ -163,7 +124,7 @@ class DiscJockey:
 		print(f"{Colors.OKBLUE}Preparing next song: {os.path.basename(next_song.path)}{Colors.ENDC}")
 		self.queued_intro = song_details_to_dj_intro.prepare_intro_text(
 				next_song,
-				previous_song=self.current_song,
+				prev_song=self.current_song,
 				model_name=self.model_name,
 			)
 
@@ -173,7 +134,7 @@ class DiscJockey:
 
 		while True:
 			self.prepare_and_speak_intro(self.current_song, use_queue=True)
-			play_song(self.current_song)
+			playback_helpers.play_song(self.current_song)
 
 			# Prepare next song and intro concurrently while current is playing
 			self.next_song = None
@@ -181,17 +142,17 @@ class DiscJockey:
 			next_thread = threading.Thread(target=self.prepare_next_async, args=(self.current_song,))
 			next_thread.start()
 
-			wait_for_song_end(self.args.testing)
+			playback_helpers.wait_for_song_end(self.args.testing)
 			next_thread.join()
 			if not self.next_song:
 				print(f"{Colors.FAIL}No next song available. Ending session.{Colors.ENDC}")
 				break
 			if self.queued_intro and len(self.queued_intro.strip()) > 5:
 				print(f"{Colors.OKGREEN}Queued intro ready for next track.{Colors.ENDC}")
-			else:
-				print(f"{Colors.WARNING}Next intro missing or too short; will skip TTS for next track.{Colors.ENDC}")
+		else:
+			print(f"{Colors.WARNING}Next intro missing or too short; will skip TTS for next track.{Colors.ENDC}")
 
-			self.previous_title = os.path.basename(self.current_song.path)
+			self.previous_song = self.current_song
 			self.current_song = self.next_song
 			self.next_song = None
 

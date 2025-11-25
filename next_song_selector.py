@@ -3,7 +3,6 @@
 # Standard Library
 import argparse
 import os
-import random
 
 # Local repo modules
 import llm_wrapper

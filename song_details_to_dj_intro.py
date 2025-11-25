@@ -74,7 +74,6 @@ def prepare_intro_text(
 
 	return clean_intro
 
-
 #============================================
 def build_prompt(
 	song: audio_utils.Song | None,
@@ -101,6 +100,7 @@ def build_prompt(
 		"Do not mention any city, town, or location. "
 		"Avoid brackets, parentheses, and em dashes. "
 		"You must base your intro on concrete facts from the Song details section. "
+		"Prefer human and creative context over statistics. "
 		"Do not invent facts that are not supported by the Song details. "
 	)
 
@@ -118,12 +118,16 @@ def build_prompt(
 
 	ending = (
 		"\n\nFirst, write exactly five lines that each start with 'FACT: '. "
-		"Each FACT line must contain one specific factual detail drawn from the Song details "
-		"(for example: album name, release year, genre, notable collaborators, recording story, "
-		"awards, or chart success). "
+		"Each FACT line must contain one specific factual detail drawn from the Song details. "
+		"Prioritize personal or creative context over charts or awards, such as: "
+		"how or why the song was written, stories from recording, changes in the band's sound, "
+		"lyrical themes, tensions or milestones for the band, or how it fits into the album. "
+		"Only use chart positions or awards if there is no stronger story available. "
 		"After those five FACT lines, write the final spoken intro. "
 		"In the intro, weave in at least two of the facts you listed. "
-		"Start the intro by naming the band and song, and end by repeating the band name and song title. "
+		"Make it sound like you are telling a brief story about the band around this track, "
+		"not reading a press release. "
+		"End by repeating the band name and song title. "
 		"Keep the intro to 3-5 sentences. "
 		"Wrap the final spoken intro inside <response>...</response>."
 	)
@@ -142,15 +146,15 @@ def build_prompt(
 	prompt += details_text + "\n\n"
 
 	prompt += "Do not write a vague or generic intro; "
-	prompt += "specific facts are more important than hype.\n"
+	prompt += "specific facts and small stories are more important than hype.\n"
 
-	prompt += "Again here is a brief file summary.\n"
-	prompt += song.one_line_info() + "\n\n"
+	if song:
+		prompt += "Again here is a brief file summary.\n"
+		prompt += song.one_line_info() + "\n\n"
 
 	prompt += ending + "\n\n"
 
 	return prompt
-
 
 #============================================
 def main() -> None:
