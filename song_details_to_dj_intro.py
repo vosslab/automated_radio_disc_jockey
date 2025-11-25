@@ -5,6 +5,7 @@ import argparse
 import os
 
 # Local repo modules
+import audio_utils
 import audio_file_to_details
 import llm_wrapper
 
@@ -33,54 +34,134 @@ def parse_args() -> argparse.Namespace:
 	return parser.parse_args()
 
 #============================================
-def build_prompt(path: str | None, use_metadata: bool, raw_text: str | None) -> str:
+#============================================
+def prepare_intro_text(
+	song: audio_utils.Song,
+	prev_song: audio_utils.Song | None = None,
+	model_name: str | None = None,
+) -> str:
+	"""
+	Build a DJ prompt for a song, query the LLM, and extract the intro text.
+
+	Args:
+		song (audio_utils.Song): Song object for the current track.
+		prev_song (audio_utils.Song | None): Optional previous song for transition.
+		model_name (str | None): Name of the Ollama model to use. If None, the
+			function will let llm_wrapper choose a model.
+
+	Returns:
+		str: Cleaned intro text inside <response> tags, or empty string on failure.
+	"""
+	print(f"{Colors.OKBLUE}Gathering song info and building prompt for {os.path.basename(song.path)}...{Colors.ENDC}")
+
+	prompt = build_prompt(
+		song=song,
+		raw_text=None,
+		prev_song=prev_song,
+	)
+
+	print(f"{Colors.OKBLUE}Sending prompt to LLM...{Colors.ENDC}")
+	dj_intro = llm_wrapper.query_ollama_model(prompt, model_name)
+
+	print(f"{Colors.OKGREEN}Received LLM output; extracting <response> block...{Colors.ENDC}")
+	# Use the generic XML extractor for the response tag
+	clean_intro = llm_wrapper.extract_xml_tag(dj_intro, "response")
+
+	if clean_intro:
+		print(f"Extracted intro length: {len(clean_intro)} characters.")
+	else:
+		print("No <response> block detected; intro text will be empty.")
+
+	return clean_intro
+
+
+#============================================
+def build_prompt(
+	song: audio_utils.Song | None,
+	raw_text: str | None,
+	prev_song: audio_utils.Song | None = None,
+) -> str:
 	"""
 	Build the LLM prompt from song metadata or a simple summary.
 
 	Args:
-		path (str | None): Song file path.
-		use_metadata (bool): Whether to use detailed metadata prompt.
+		song (audio_utils.Song | None): Song object with file and tag info.
 		raw_text (str | None): Raw description to use directly.
+		prev_song (audio_utils.Song | None): Previous song for transition.
 
 	Returns:
 		str: Prompt text.
+
+	Raises:
+		ValueError: If neither raw_text nor usable metadata is available.
 	"""
+	base = (
+		"You are a charismatic radio DJ. "
+		"Keep the intro natural and conversational. "
+		"Do not mention any city, town, or location. "
+		"Avoid brackets, parentheses, and em dashes. "
+		"You must base your intro on concrete facts from the Song details section. "
+		"Do not invent facts that are not supported by the Song details. "
+	)
+
+	if not raw_text and not song:
+		raise ValueError("build_prompt requires raw_text or a valid song with metadata.")
+
 	if raw_text:
-		prompt = ""
-		prompt += "You are a radio DJ introducing the following song details. "
-		prompt += "Do not add locations. Keep sentences short and natural. "
-		prompt += "Wrap the final intro inside <response>...</response>. "
-		prompt += f"Details: {raw_text}"
-		return prompt
-	if use_metadata and path:
-		meta = audio_file_to_details.Metadata(path)
-		meta.fetch_wikipedia_info()
-		prompt = ""
-		prompt += "You're a charismatic radio DJ. Keep it short and natural (3-4 sentences). "
-		prompt += "Do not mention any city, town, or location. "
-		prompt += "Avoid brackets/parentheses and em dashes. "
-		prompt += "Include 1-2 interesting facts from the details below. "
-		prompt += "Respond only with the final spoken intro inside <response>...</response>.\n\n"
-		prompt += "Song details:\n"
-		prompt += meta.get_results()
+		details_intro = "Use the text below as song details.\n\n"
+		details_text = raw_text
 	else:
-		name = os.path.basename(path) if path else "Unknown song"
-		prompt = ""
-		prompt += "Imagine you are a radio disc jockey introducing a song. "
-		prompt += f"Start with the band and song name: {name}. "
-		prompt += "Give two quick facts, then repeat the band and song name. "
-		prompt += " Keep it to 3-4 sentences. "
-		prompt += "Wrap the final intro inside <response>...</response>."
+		meta = audio_file_to_details.Metadata(song.path)
+		meta.fetch_wikipedia_info()
+		details_intro = "Use the details below about the song. Treat them as authoritative.\n\n"
+		details_text = meta.get_results()
+
+	ending = (
+		"\n\nFirst, write exactly five lines that each start with 'FACT: '. "
+		"Each FACT line must contain one specific factual detail drawn from the Song details "
+		"(for example: album name, release year, genre, notable collaborators, recording story, "
+		"awards, or chart success). "
+		"After those five FACT lines, write the final spoken intro. "
+		"In the intro, weave in at least two of the facts you listed. "
+		"Start the intro by naming the band and song, and end by repeating the band name and song title. "
+		"Keep the intro to 3-5 sentences. "
+		"Wrap the final spoken intro inside <response>...</response>."
+	)
+
+	prompt = base
+
+	if song:
+		prompt += "Here is a brief file summary for context (do not read this verbatim on air):\n"
+		prompt += song.one_line_info() + "\n\n"
+	if prev_song:
+		prompt += "The previous song was (you may reference it briefly):\n"
+		prompt += prev_song.one_line_info() + "\n\n"
+
+	prompt += details_intro
+	prompt += "Song details:\n"
+	prompt += details_text + "\n\n"
+
+	prompt += "Do not write a vague or generic intro; "
+	prompt += "specific facts are more important than hype.\n"
+
+	prompt += "Again here is a brief file summary.\n"
+	prompt += song.one_line_info() + "\n\n"
+
+	prompt += ending + "\n\n"
+
 	return prompt
+
 
 #============================================
 def main() -> None:
 	args = parse_args()
 	if not args.input_file and not args.text:
 		raise ValueError("Provide a song file (-i) or raw text (-t).")
-	prompt = build_prompt(args.input_file, args.use_metadata, args.text)
+	song_obj = audio_utils.Song(args.input_file) if args.input_file else None
+	prompt = build_prompt(song_obj, args.use_metadata, args.text)
 	print(f"{Colors.OKBLUE}Sending prompt to LLM...{Colors.ENDC}")
-	raw = llm_wrapper.query_ollama_model(prompt)
+	model_name = llm_wrapper.select_ollama_model()
+	raw = llm_wrapper.query_ollama_model(prompt, model_name)
 	intro = llm_wrapper.extract_response_text(raw)
 	if intro:
 		print(f"{Colors.OKGREEN}DJ Intro:{Colors.ENDC}")

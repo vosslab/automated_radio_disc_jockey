@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 
 # Standard Library
-import os
 import random
 import re
 import subprocess
 import time
-from typing import Tuple
 
 #============================================
 class Colors:
@@ -17,6 +15,44 @@ class Colors:
 	WARNING = "\033[93m"
 	FAIL = "\033[91m"
 	ENDC = "\033[0m"
+
+#============================================
+def extract_xml_tag(raw_text: str, tag: str) -> str:
+	"""
+	Extract the last occurrence of a given XML-like tag.
+
+	Args:
+		raw_text (str): LLM output.
+		tag (str): Tag name to extract, for example 'choice' or 'reason'.
+
+	Returns:
+		str: Extracted text or empty string if not found.
+	"""
+	if not raw_text:
+		return ""
+
+	lower = raw_text.lower()
+	open_token = f"<{tag}"
+	close_token = f"</{tag}"
+
+	# If there is an opening tag but no closing tag, try to auto close it
+	if open_token in lower and close_token not in lower:
+		raw_text = f"{raw_text}</{tag}>"
+		lower = raw_text.lower()
+
+	pattern = rf"<{tag}\b[^>]*>(.*?)</{tag}\b[^>]*>"
+	matches = re.findall(pattern, raw_text, re.IGNORECASE | re.DOTALL)
+
+	if not matches:
+		return ""
+
+	text = matches[-1].strip()
+	return text
+
+
+# Simple assertion test for the function: 'extract_xml_tag'
+_raw = "<choice>song.mp3</choice><reason>Good flow</reason>"
+assert extract_xml_tag(_raw, "choice") == "song.mp3"
 
 #============================================
 def get_vram_size_in_gb() -> int | None:
@@ -72,25 +108,28 @@ def list_ollama_models() -> list:
 	return models
 
 #============================================
-def select_ollama_model(vram_size_gb: int | None, available: list) -> str:
+def select_ollama_model() -> str:
 	"""
-	Select an Ollama model based on VRAM/unified memory.
-
-	Args:
-		vram_size_gb (int | None): Detected memory size.
-		available (list): Models available locally.
+	Select an Ollama model based on VRAM or unified memory and local availability.
 
 	Returns:
 		str: Model name to use.
+
+	Raises:
+		RuntimeError: If the chosen model is not available.
 	"""
+	vram_size_gb = get_vram_size_in_gb()
+	if vram_size_gb is None:
+		raise ValueError("Unable to detect VRAM/unified memory for model selection.")
+	available = list_ollama_models()
+
 	model_name = "llama3.2:1b-instruct-q4_K_M"
-	if vram_size_gb is not None:
-		if vram_size_gb > 30:
-			model_name = "gpt-oss:20b"
-		elif vram_size_gb > 14:
-			model_name = "phi4:14b-q4_K_M"
-		elif vram_size_gb > 4:
-			model_name = "llama3.2:3b-instruct-q5_K_M"
+	if vram_size_gb > 30:
+		model_name = "gpt-oss:20b"
+	elif vram_size_gb > 14:
+		model_name = "phi4:14b-q4_K_M"
+	elif vram_size_gb > 4:
+		model_name = "llama3.2:3b-instruct-q5_K_M"
 
 	if model_name not in available:
 		available_display = ", ".join(available) if available else "none"
@@ -102,24 +141,17 @@ def select_ollama_model(vram_size_gb: int | None, available: list) -> str:
 	return model_name
 
 #============================================
-def query_ollama_model(prompt: str, vram_size_gb: int | None = None, available: list | None = None) -> str:
+def query_ollama_model(prompt: str, model_name: str) -> str:
 	"""
 	Query Ollama with the given prompt, handling model selection.
 
 	Args:
 		prompt (str): Prompt text.
-		vram_size_gb (int | None): Detected memory size.
-		available (list | None): Available models (optional).
+		model_name (str): Name of the Ollama model to use.
 
 	Returns:
 		str: Model response (may be empty on error).
 	"""
-	if available is None:
-		available = list_ollama_models()
-	if vram_size_gb is None:
-		vram_size_gb = get_vram_size_in_gb()
-	time.sleep(random.random())
-	model_name = select_ollama_model(vram_size_gb, available)
 	print(f"{Colors.OKBLUE}Sending prompt to LLM with model {model_name}...{Colors.ENDC}")
 	print(f"{Colors.WARNING}Waiting for response...{Colors.ENDC}")
 	command = ["ollama", "run", model_name, prompt]

@@ -38,7 +38,7 @@ def select_song(song_list: list, sample_size: int) -> str:
 	Prompt user to select a song from a random sample.
 
 	Args:
-		song_list (list): All available song paths.
+		song_list (list): All available song paths or Song objects.
 		sample_size (int): Sample size for selection.
 
 	Returns:
@@ -50,7 +50,7 @@ def select_song(song_list: list, sample_size: int) -> str:
 	print(f"Please select a song (1-{sample_size}):")
 	index = 1
 	for song in choices:
-		song_obj = Song(song)
+		song_obj = song if isinstance(song, Song) else Song(song)
 		print(f"{colors.OKBLUE}{index}:{colors.ENDC} {song_obj.one_line_info()}")
 		index += 1
 
@@ -59,7 +59,8 @@ def select_song(song_list: list, sample_size: int) -> str:
 		if user_input.isdigit():
 			selected = int(user_input) - 1
 			if 0 <= selected < sample_size:
-				return choices[selected]
+				chosen = choices[selected]
+				return chosen.path if isinstance(chosen, Song) else chosen
 		print(f"Please enter a number between 1 and {sample_size}.")
 
 #============================================

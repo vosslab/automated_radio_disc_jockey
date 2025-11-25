@@ -6,7 +6,7 @@ An AI-powered virtual DJ that curates and announces songs like a real radio host
 - Reads `.mp3`, `.flac`, `.wav`, `.ogg` files from a directory.
 - Samples N songs (default 5) for you to choose; guards against bad input.
 - Gathers song/artist/album info from Wikipedia with Last.fm fallback and AllMusic search links.
-- Builds a DJ-style intro prompt (metadata-aware) and sends it to an Ollama model chosen by detected VRAM/unified memory.
+- Builds a DJ-style intro prompt (metadata-aware) and sends it to an Ollama model chosen automatically.
 - Speaks the intro (gTTS/pygame) then plays the track.
 - Suggests the next track based on simple artist/album similarity.
 
@@ -14,7 +14,7 @@ An AI-powered virtual DJ that curates and announces songs like a real radio host
 - Python 3.10+
 - System packages: `sox` (for TTS post-processing in `speak_something.py`), `ffmpeg` if you plan to add more codecs.
 - Python packages: `gtts`, `mutagen`, `pygame`, `wikipedia` (install with `pip install -r requirements.txt`).
-- Ollama running locally with the models named in `llm_wrapper.py` (defaults to `llama3.2:1b-instruct-q4_K_M` and scales up with VRAM).
+- Ollama running locally; model selection is automatic via `llm_wrapper.py` (defaults to `llama3.2:1b-instruct-q4_K_M` and scales up with VRAM).
 
 ## Setup
 ```bash
@@ -29,6 +29,7 @@ Place your music files in a directory you will point the scripts at (defaults ar
   ```bash
   ./disc_jockey.py /path/to/music --sample-size 5
   # add --no-metadata-prompt to skip detailed metadata prompt building
+  # add --testing to stop songs after ~20s
   ```
 - Build a DJ prompt for one file:
   ```bash
@@ -52,7 +53,7 @@ Place your music files in a directory you will point the scripts at (defaults ar
 ## Flow
 1) Scan music directory and sample N songs for user selection.  
 2) Extract metadata, fetch Wikipedia/Last.fm info, and build a DJ prompt.  
-3) Choose an Ollama model based on VRAM/unified memory and generate intro text.  
+3) Choose an Ollama model automatically and generate intro text.  
 4) Speak the intro via TTS, then play the selected track.  
 5) Suggest a similar next track using artist/album overlap.  
 6) Repeat the loop.  

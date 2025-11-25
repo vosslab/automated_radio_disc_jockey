@@ -4,12 +4,8 @@
 import argparse
 import os
 import random
-import re
-import subprocess
-import time
 
 # Local repo modules
-import audio_file_to_details
 import llm_wrapper
 import audio_utils
 from audio_utils import Song
@@ -35,146 +31,117 @@ def parse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(description="Select the next song given a current song and music directory.")
 	parser.add_argument("-c", "--current", dest="current", required=True, help="Path to current song.")
 	parser.add_argument("-d", "--directory", dest="directory", required=True, help="Music directory to sample from.")
-	parser.add_argument("-n", "--sample-size", dest="sample_size", type=int, default=10, help="Number of candidates to consider.")
+	parser.add_argument("-n", "--sample-size", dest="sample_size", type=int, default=16, help="Number of candidates to consider.")
 	return parser.parse_args()
 
 #============================================
-def list_ollama_models() -> list:
-	return llm_wrapper.list_ollama_models()
-
-#============================================
-def get_vram_size_in_gb() -> int | None:
-	return llm_wrapper.get_vram_size_in_gb()
-
-#============================================
-def select_ollama_model(vram_size_gb: int | None, available: list) -> str:
-	return llm_wrapper.select_ollama_model(vram_size_gb, available)
-
-#============================================
-def query_ollama_model(prompt: str, vram_size_gb: int | None, available: list) -> str:
-	return llm_wrapper.query_ollama_model(prompt, vram_size_gb, available)
-
-#============================================
-def extract_choice_reason(raw_text: str) -> tuple[str, str]:
-	"""
-	Extract choice and reason from LLM output with <choice> and <reason> tags.
-
-	Args:
-		raw_text (str): LLM output.
-
-	Returns:
-		tuple[str, str]: Chosen filename (or empty) and reason text.
-	"""
-	choice_match = re.findall(r"<choice[^>]*>(.*?)</choice[^>]*>", raw_text, re.IGNORECASE | re.DOTALL)
-	reason_match = re.findall(r"<reason[^>]*>(.*?)</reason[^>]*>", raw_text, re.IGNORECASE | re.DOTALL)
-	choice = choice_match[-1].strip() if choice_match else ""
-	reason = reason_match[-1].strip() if reason_match else ""
-	if not choice and "<choice" in raw_text and "</choice>" not in raw_text.lower():
-		raw_text = f"{raw_text}</choice>"
-		choice_match = re.findall(r"<choice[^>]*>(.*?)</choice[^>]*>", raw_text, re.IGNORECASE | re.DOTALL)
-		if choice_match:
-			choice = choice_match[-1].strip()
-	if not reason and "<reason" in raw_text and "</reason>" not in raw_text.lower():
-		raw_text = f"{raw_text}</reason>"
-		reason_match = re.findall(r"<reason[^>]*>(.*?)</reason[^>]*>", raw_text, re.IGNORECASE | re.DOTALL)
-		if reason_match:
-			reason = reason_match[-1].strip()
-	return choice, reason
-
-#============================================
-def choose_next_song(current_song: str, song_list: list, cache: dict, sample_size: int) -> str | None:
+def choose_next_song(current_song: Song, song_list: list[str], sample_size: int, model_name: str | None = None) -> Song | None:
 	"""
 	Select the next song using an LLM over a sampled candidate pool.
 
 	Args:
-		current_song (str): Currently playing song.
-		song_list (list): All available songs.
-		cache (dict): Metadata cache.
-		sample_size (int): Candidate pool size.
+		current_song (Song): Currently playing song with metadata.
+		song_list (list[str]): List of all available song file paths.
+		sample_size (int): Number of candidate songs to consider.
 
 	Returns:
-		str | None: Path to chosen next song.
+		Song | None: Chosen next Song object, or None if selection fails.
 	"""
-	pool = [song for song in song_list if song != current_song]
-	if not pool:
+	if len(song_list) <= 1:
 		return None
 
-	def cached_meta(path: str) -> dict:
-		if path in cache:
-			return cache[path]
-		# Prefer lightweight Song for cached fields
-		song_obj = Song(path)
-		cache[path] = {
-			"title": song_obj.title,
-			"artist": song_obj.artist,
-			"album": song_obj.album,
-		}
-		return cache[path]
+	# Pick a candidate list and resample if it contains the current song
+	candidate_paths = audio_utils.select_song_list(song_list, sample_size)
+	while current_song.path in candidate_paths and len(song_list) > 1:
+		candidate_paths = audio_utils.select_song_list(song_list, sample_size)
 
-	last_meta = cached_meta(current_song)
-	last_artist = last_meta.get("artist", "").lower()
-	last_album = last_meta.get("album", "").lower()
-	last_title = last_meta.get("title", "").lower()
-	vram_size_gb = get_vram_size_in_gb()
-	available_models = list_ollama_models()
-
-	while True:
-		if not pool:
-			return None
-		random.shuffle(pool)
-		candidates = pool[: max(1, min(sample_size, len(pool)))]
-
-		print(f"{Colors.OKMAGENTA}Candidates for next song:{Colors.ENDC}")
-		for candidate in candidates:
-			meta = cached_meta(candidate)
-			song_obj = Song(candidate)
-			print(song_obj.one_line_info())
-
-		prompt = ""
-		prompt += "You are selecting the next track for a radio show. "
-		prompt += "Pick the single best candidate that flows naturally from the current song. "
-		prompt += "Prefer similar era/genre/energy/tempo over drastic jumps; avoid the same artist back to back. "
-		prompt += "Respond only with two XML tags and nothing else: "
-		prompt += "<choice>FILENAME</choice><reason>WHY YOU PICKED IT</reason>\n"
-		prompt += f"Current song: {os.path.basename(current_song)} | Artist: {last_artist} | Album: {last_album} | Title: {last_title}\n"
-		prompt += "Candidates:\n"
-		for candidate in candidates:
-			meta = cached_meta(candidate)
-			prompt += f"- {os.path.basename(candidate)} | Artist: {meta.get('artist')} | Album: {meta.get('album')} | Title: {meta.get('title')}\n"
-		time.sleep(random.random())
-		try:
-			raw = query_ollama_model(prompt, vram_size_gb, available_models)
-			choice, reason = extract_choice_reason(raw)
-			if choice:
-				print(f"{Colors.OKGREEN}LLM choice: {choice}{Colors.ENDC}")
-			if reason:
-				print(f"{Colors.OKMAGENTA}LLM reason: {reason}{Colors.ENDC}")
-			for candidate in candidates:
-				if os.path.basename(candidate).strip() == choice.strip():
-					print(f"{Colors.OKCYAN}Final next song: {os.path.basename(candidate)}{Colors.ENDC}")
-					return candidate
-			print(f"{Colors.WARNING}LLM choice did not match candidates; sampling a new pool and retrying...{Colors.ENDC}")
+	# Build Song objects only for the small candidate set
+	candidates = []
+	for path in candidate_paths:
+		song = Song(path)
+		if song.artist == current_song.artist:
 			continue
-		except Exception as error:
-			print(f"{Colors.FAIL}LLM selection failed; sampling a new pool. Error: {error}{Colors.ENDC}")
-			continue
+		candidates.append(song)
+
+	if not candidates:
+		return None
+
+	print(f"{Colors.OKMAGENTA}Candidates for next song:{Colors.ENDC}")
+	for song in candidates:
+		print(song.one_line_info())
+
+	last_artist = current_song.artist.lower()
+	last_album = current_song.album.lower()
+	last_title = current_song.title.lower()
+
+	prompt = ""
+	prompt += "You are selecting the next track for a radio show. "
+	prompt += "From the candidates, first identify the three best matches for the current song. "
+	prompt += "Rank those three by how well they fit after the current track. "
+	prompt += "Use genre, energy, style, and tempo as the primary factors. "
+	prompt += "If the current band is indie or obscure, avoid jumping to a very mainstream band. "
+	prompt += "After ranking the top three, choose the single best track as the next song. "
+	prompt += "In your reasoning, briefly explain why the two rejected tracks are weaker fits "
+	prompt += "than the final choice. "
+	prompt += "Use the file names exactly as shown in the candidate list. "
+	prompt += "Respond only with two XML tags and nothing else: "
+	prompt += "<choice>FILENAME</choice>"
+	prompt += "<reason>WHY YOU PICKED IT AND WHY THE OTHER TWO WERE REJECTED</reason>\n"
+	prompt += (
+		f"Current song: {os.path.basename(current_song.path)} | "
+		f"Artist: {last_artist} | Album: {last_album} | Title: {last_title}\n"
+	)
+	prompt += "Candidates:\n"
+	for song in candidates:
+		prompt += (
+			f"- {os.path.basename(song.path)} | "
+			f"Artist: {song.artist} | Album: {song.album} | Title: {song.title}\n"
+		)
+
+	model = model_name or llm_wrapper.select_ollama_model()
+	raw = llm_wrapper.query_ollama_model(prompt, model)
+	choice = llm_wrapper.extract_xml_tag(raw, "choice")
+	reason = llm_wrapper.extract_xml_tag(raw, "reason")
+
+	if choice:
+		print(f"{Colors.OKGREEN}LLM choice: {choice}{Colors.ENDC}")
+	if reason:
+		print(f"{Colors.OKMAGENTA}LLM reason: {reason}{Colors.ENDC}")
+
+	chosen_song = None
+	for song in candidates:
+		base_name = os.path.basename(song.path).strip()
+		if base_name == choice.strip():
+			print(f"{Colors.OKCYAN}Final next song: {base_name}{Colors.ENDC}")
+			chosen_song = song
+			break
+
+	if chosen_song is None:
+		print(f"{Colors.WARNING}LLM choice did not match any candidate; no selection made.{Colors.ENDC}")
+
+	return chosen_song
 
 #============================================
 def main() -> None:
 	args = parse_args()
-	songs = audio_utils.get_song_list(args.directory)
-	current = os.path.abspath(args.current)
-	if current not in songs:
+
+	# Keep library as paths, cheap
+	song_paths = audio_utils.get_song_list(args.directory)
+	model_name = llm_wrapper.select_ollama_model()
+
+	current_path = os.path.abspath(args.current)
+	if current_path not in song_paths:
 		print(f"{Colors.WARNING}Current song is not in directory list; adding it for context.{Colors.ENDC}")
-		songs.append(current)
+		song_paths.append(current_path)
 
-	pool = [s for s in songs if s != current]
-	random.shuffle(pool)
-	candidates = pool[: max(1, min(args.sample_size, len(pool)))]
+	current_song = Song(current_path)  # only one heavy metadata load here
+	print("CURRENT SONG:")
+	print(current_song.one_line_info())
+	print("="*60)
 
-	next_song = choose_next_song(current, songs, {}, args.sample_size)
+	next_song = choose_next_song(current_song, song_paths, args.sample_size, model_name=model_name)
 	if next_song:
-		print(f"{Colors.OKCYAN}Next song: {next_song}{Colors.ENDC}")
+		print(f"{Colors.OKCYAN}Next song: {next_song.path}{Colors.ENDC}")
 	else:
 		print(f"{Colors.WARNING}No selection made.{Colors.ENDC}")
 
