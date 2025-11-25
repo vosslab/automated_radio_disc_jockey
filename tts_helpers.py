@@ -16,23 +16,50 @@ from gtts import gTTS
 
 #============================================
 def format_intro_for_tts(text: str) -> str:
+	"""
+	Normalize DJ intro text for TTS playback by splitting long sentences
+	and adding newlines after periods and commas.
+
+	Args:
+		text (str): Raw DJ intro text.
+
+	Returns:
+		str: Cleaned text formatted for TTS.
+	"""
 	if not text:
 		return ""
-	normalized = text.replace("—", ". ").replace("..", ".").replace("...", ".")
+
+	# Normalize some punctuation and ellipsis variants
+	normalized = text.replace("\u2014", ". ")
+	normalized = normalized.replace("...", ".")
+	normalized = normalized.replace("..", ".")
+
 	segments = re.split(r"[.!?]", normalized)
 	clean_segments = []
 	for segment in segments:
 		segment = segment.strip()
 		if not segment:
 			continue
+		# Split long "X and Y" sentences into smaller chunks
 		if " and " in segment:
 			parts = [part.strip() for part in segment.split(" and ") if part.strip()]
 			clean_segments.extend(parts)
 		else:
 			clean_segments.append(segment)
+
+	if not clean_segments:
+		return ""
+
+	# Rebuild as sentences first
 	result = ". ".join(clean_segments)
+	result = result.strip()
 	if not result.endswith("."):
 		result += "."
+
+	# Add newlines after commas and periods to help TTS pacing
+	result = result.replace(", ", ", \n")
+	result = result.replace(". ", ". \n")
+
 	return result
 
 #============================================
