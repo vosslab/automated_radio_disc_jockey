@@ -199,7 +199,11 @@ class Metadata:
 		time.sleep(random.random())  # Prevent overloading Wikipedia
 		with warnings.catch_warnings():
 			warnings.simplefilter("ignore", GuessedAtParserWarning)
-			results = wikipedia.search(query)
+			try:
+				results = wikipedia.search(query)
+			except wikipedia.exceptions.WikipediaException:
+				time.sleep(5)
+				results = wikipedia.search(query)
 		if not results:
 			return None, None, None  # No results found
 
