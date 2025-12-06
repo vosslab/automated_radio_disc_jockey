@@ -12,6 +12,7 @@ class Colors:
 	WARNING = "\033[93m"
 	FAIL = "\033[91m"
 	ENDC = "\033[0m"
+
 #============================================
 def extract_xml_tag(raw_text: str, tag: str) -> str:
 	"""
