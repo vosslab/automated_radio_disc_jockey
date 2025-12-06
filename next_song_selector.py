@@ -67,8 +67,11 @@ def choose_next_song(current_song: Song, song_list: list[str], sample_size: int,
 		return None
 
 	print(f"{Colors.OKMAGENTA}Candidates for next song:{Colors.ENDC}")
+	lines = []
 	for song in candidates:
-		print(song.one_line_info())
+		lines.append(song.one_line_info())
+	lines.sort()
+	print('\n'.join(lines))
 
 	last_artist = current_song.artist.lower()
 	last_album = current_song.album.lower()
