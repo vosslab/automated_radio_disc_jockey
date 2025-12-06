@@ -1,14 +1,21 @@
-better LLM failure
-- get another response right away
+TODO
 
-common function for song lists
+LLM behavior
+- Add a retry system: request a second and third LLM answer when the first looks wrong.
+- Add a referee model to choose the best of three next track predictions.
+- Improve failure detection by checking for genre violations and impossible scores.
 
-run the LLM 3 times and another LLM pick the best response or the 3.
+Song list handling
+- Build a shared utility for formatting and validating candidate song lists.
+- Add safeguards to prevent misparsed entries.
 
-better playback window, song progress bar
+Playback features
+- Better playback TUI window with a real progress bar.
+- Add skip control and optional auto skip.
+- Use track duration as a factor in next song selection.
+- Support queueing multiple songs ahead.
 
-have the LLM next song, use the length of the song as a factor
-
-have the ability to skip to the next song
-
-queue up more than the next song
+Future enhancements
+- Track history for analytics and feedback into the LLM.
+- Save past LLM predictions for debugging bad choices.
+- Allow a second model to critique DJ intros for quality control.
