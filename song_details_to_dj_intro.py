@@ -117,13 +117,13 @@ def build_prompt(
 		details_text = meta.get_results()
 
 	ending = (
-		"\n\nFirst, write exactly five lines that each start with 'FACT: '. "
-		"Each FACT line must contain one specific factual detail drawn from the Song details. "
+		"\n\nFirst, write exactly five lines that each start with 'FACT: ' or 'TRIVIA: '. "
+		"Each FACT/TRIVIA line must contain one specific factual detail drawn from the Song details. "
 		"Prioritize personal or creative context over charts or awards, such as: "
 		"how or why the song was written, stories from recording, changes in the band's sound, "
 		"lyrical themes, tensions or milestones for the band, or how it fits into the album. "
 		"Only use chart positions or awards if there is no stronger story available. "
-		"After those five FACT lines, write the final spoken intro. "
+		"After those five FACT/TRIVIA lines, write the final spoken intro. "
 		"In the intro, weave in at least two of the facts you listed. "
 		"Make it sound like you are telling a brief story about the band around this track, "
 		"not reading a press release. "

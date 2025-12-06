@@ -79,7 +79,7 @@ def choose_next_song(current_song: Song, song_list: list[str], sample_size: int,
 	prompt += "(1) Score each candidate song in the following categories. "
 	prompt += "Popularity 1 mainstream, 3 niche or indie, 4 obscure, 5 very obscure. "
 	prompt += "Genre similarity 1 totally different, 3 adjacent traits, 5 same or very close. "
-	prompt += "Energy similarity 1 very mismatched intensity, 3 moderate match, 5 very similar intensity. "
+	prompt += "Intensity similarity 1 very mismatched intensity, 3 moderate match, 5 very similar intensity. "
 	prompt += "Style similarity 1 very different vibe, 3 partial overlap, 5 strong alignment. "
 	prompt += "Mood similarity 1 opposite emotional color, 3 partial match, 5 strong emotional match. "
 	prompt += "Tempo similarity 1 very different speed, 3 moderately different, 5 very close. "
