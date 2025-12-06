@@ -3,6 +3,7 @@
 # Standard Library
 import argparse
 import os
+import re
 
 # Local repo modules
 import llm_wrapper
@@ -100,10 +101,12 @@ def choose_next_song(current_song: Song, song_list: list[str], sample_size: int,
 	model = model_name or llm_wrapper.select_ollama_model()
 	raw = llm_wrapper.query_ollama_model(prompt, model)
 	choice = llm_wrapper.extract_xml_tag(raw, "choice")
+	choice = choice.replace(" ", "_")
+	choice = re.sub("^The_", "", choice)
 	reason = llm_wrapper.extract_xml_tag(raw, "reason")
 
 	if choice:
-		print(f"{Colors.OKGREEN}LLM choice: {choice}{Colors.ENDC}")
+		print(f"{Colors.OKGREEN}LLM selection result: {choice}{Colors.ENDC}")
 	if reason:
 		print(f"{Colors.OKMAGENTA}LLM reason: {reason}{Colors.ENDC}")
 
