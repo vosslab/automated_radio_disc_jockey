@@ -83,7 +83,7 @@ def choose_next_song(current_song: Song, song_list: list[str], sample_size: int,
 	prompt += "Style similarity 1 very different vibe, 3 partial overlap, 5 strong alignment. "
 	prompt += "Mood similarity 1 opposite emotional color, 3 partial match, 5 strong emotional match. "
 	prompt += "Tempo similarity 1 very different speed, 3 moderately different, 5 very close. "
-	prompt += "These scores are for internal reasoning. Do not display them or your calculations. "
+	prompt += "You may display only a six number summary per candidate: P,G,I,S,M,T. No explanations. "
 	prompt += "(2) From the candidates, identify the four best matches for the current song. "
 	prompt += "(3) Rank those four by how well they fit after the current track. "
 	prompt += "Use genre, energy, style, and tempo as the primary factors. "

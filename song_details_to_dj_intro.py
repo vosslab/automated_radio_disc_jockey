@@ -95,7 +95,7 @@ def build_prompt(
 		ValueError: If neither raw_text nor usable metadata is available.
 	"""
 	base = (
-		"You are a charismatic radio DJ. "
+		"(**) You are a charismatic radio DJ. "
 		"Keep the intro natural and conversational. "
 		"Do not mention any city, town, or location. "
 		"Avoid brackets, parentheses, and em dashes. "
@@ -117,16 +117,19 @@ def build_prompt(
 		details_text = meta.get_results()
 
 	ending = (
-		"\n\nFirst, write exactly five lines that each start with 'FACT: ' or 'TRIVIA: '. "
+		"\n\n(**) First, write exactly five lines that each start with 'FACT: ' or 'TRIVIA: '. "
 		"Each FACT/TRIVIA line must contain one specific factual detail drawn from the Song details. "
 		"Prioritize personal or creative context over charts or awards, such as: "
 		"how or why the song was written, stories from recording, changes in the band's sound, "
 		"lyrical themes, tensions or milestones for the band, or how it fits into the album. "
 		"Only use chart positions or awards if there is no stronger story available. "
-		"After those five FACT/TRIVIA lines, write the final spoken intro. "
+		"\n(**) After those five FACT/TRIVIA lines, write the final spoken intro. "
 		"In the intro, weave in at least two of the facts you listed. "
 		"Make it sound like you are telling a brief story about the band around this track, "
 		"not reading a press release. "
+		"Write the intro with a sense of rise and fall. Begin with a lively opening line, "
+		"follow with a softer or more reflective line, then lift the energy again before "
+		"the final handoff to the song. "
 		"End by repeating the band name and song title. "
 		"Keep the intro to 3-5 sentences. "
 		"Wrap the final spoken intro inside <response>...</response>."
@@ -135,7 +138,7 @@ def build_prompt(
 	prompt = base
 
 	if song:
-		prompt += "Here is a brief file summary for context (do not read this verbatim on air):\n"
+		prompt += "(**) Here is a brief file summary for context (do not read this verbatim on air):\n"
 		prompt += song.one_line_info() + "\n\n"
 	if prev_song:
 		prompt += "The previous song was (you may reference it briefly):\n"
