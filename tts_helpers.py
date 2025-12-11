@@ -102,38 +102,16 @@ def text_to_speech_gtts(text: str) -> str:
 
 #============================================
 def process_audio_with_sox(input_file: str, speed: float) -> str:
-	processed_wav = "temp_processed.wav"
-	if input_file.endswith(".mp3"):
-		return _process_mp3_with_sox(input_file, processed_wav, speed)
-	return _process_wav_with_sox(input_file, processed_wav, speed)
-
-def _process_mp3_with_sox(input_file: str, output_file: str, speed: float) -> str:
-	intermediate_wav = "temp_intermediate.wav"
-	_command_to_wav = f"sox \"{input_file}\" \"{intermediate_wav}\""
-	print(f"[sox] { _command_to_wav }")
-	os.system(_command_to_wav)
-	_command_process = (
-		f"sox \"{intermediate_wav}\" \"{output_file}\" "
-		f"tempo {speed} silence 1 0.1 1% -1 0.4 1%"
-	)
-	print(f"[sox] { _command_process }")
-	os.system(_command_process)
-	if os.path.exists(intermediate_wav):
-		os.remove(intermediate_wav)
-	if os.path.exists(input_file):
-		os.remove(input_file)
-	return output_file
-
-def _process_wav_with_sox(input_file: str, output_file: str, speed: float) -> str:
-	command = (
-		f"sox \"{input_file}\" \"{output_file}\" "
-		f"tempo {speed} silence 1 0.1 1% -1 0.4 1%"
-	)
-	print(f"[sox] {command}")
-	os.system(command)
-	if os.path.exists(input_file):
-		os.remove(input_file)
-	return output_file
+    output_file = "temp_processed.wav"
+    command = (
+        f"sox \"{input_file}\" \"{output_file}\" "
+        f"tempo {speed} silence 1 0.1 1% -1 0.9 1%"
+    )
+    print(f"[sox] {command}")
+    os.system(command)
+    if os.path.exists(input_file):
+        os.remove(input_file)
+    return output_file
 
 #============================================
 def speak_text(text: str, engine: str, save: bool, speed: float):
