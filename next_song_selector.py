@@ -192,9 +192,10 @@ def choose_next_song(current_song: Song, song_list: list[str], sample_size: int,
 	prompt += "using the numerical rankings than the final choice. "
 	prompt += "\n(6) Use the file names exactly as shown in the candidate list. "
 	prompt += "\n(7) select the least jarring and the most 'this DJ knows what they are doing' choice."
-	prompt += "\n(8) Respond with these two specific XML tags for processing "
+	prompt += "\n(8) keep your output other than the response short and to the point."
+	prompt += "\n(9) Respond with these two specific XML tags for processing "
 	prompt += "<choice>FILENAME.mp3</choice>"
-	prompt += "<reason>WHY YOU PICKED IT AND WHY THE OTHER TWO WERE REJECTED</reason>\n"
+	prompt += "<reason>WHY YOU PICKED IT AND BREAKDOWN OF WHY THE OTHER TOP SONGS WERE REJECTED</reason>\n"
 	prompt += (
 		f"Current song: {os.path.basename(current_song.path)} | "
 		f"Artist: {last_artist} | Album: {last_album} | Title: {last_title}\n"
