@@ -2,6 +2,7 @@
 
 import re
 import subprocess
+import time
 
 #============================================
 class Colors:
@@ -163,12 +164,17 @@ def query_ollama_model(prompt: str, model_name: str) -> str:
 	print(f"{Colors.OKBLUE}Sending prompt to LLM with model {model_name}...{Colors.ENDC}")
 	print(f"{Colors.WARNING}Waiting for response...{Colors.ENDC}")
 	command = ["ollama", "run", model_name, prompt]
+	start_time = time.time()
 	result = subprocess.run(command, capture_output=True, text=True)
+	elapsed = time.time() - start_time
 	if result.returncode != 0:
 		print(f"{Colors.FAIL}Ollama error: {result.stderr.strip()}{Colors.ENDC}")
 		return ""
 	output = result.stdout.strip()
-	print(f"{Colors.OKGREEN}LLM response length: {len(output)} characters.{Colors.ENDC}")
+	print(
+		f"{Colors.OKGREEN}LLM response length: {len(output)} characters "
+		f"({elapsed:.2f}s).{Colors.ENDC}"
+	)
 	return output
 
 #============================================

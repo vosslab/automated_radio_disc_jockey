@@ -3,6 +3,7 @@
 # Standard Library
 import os
 import random
+import re
 import mutagen
 from mutagen.mp3 import MP3
 from mutagen.flac import FLAC
@@ -120,6 +121,7 @@ class Song:
 		self.is_compilation = False
 		self.length_seconds = None
 		self.size_bytes = None
+		self.year = None
 		self._load_file_info()
 
 	#============================================
@@ -138,6 +140,12 @@ class Song:
 				self.artist = (audio.get("artist") or [self.artist])[0]
 				self.album = (audio.get("album") or [self.album])[0]
 				self.is_compilation = (audio.get("TCMP") or ["0"])[0] == "1"
+				self.year = self.year or _extract_year_from_candidates(
+					audio.get("originaldate"),
+					audio.get("date"),
+					audio.get("year"),
+					getattr(audio, "tags", {}).get("TDRC") if getattr(audio, "tags", None) else None,
+				)
 			elif lower.endswith(".flac"):
 				audio = FLAC(self.path)
 				self.length_seconds = int(audio.info.length) if audio.info and audio.info.length else None
@@ -145,6 +153,11 @@ class Song:
 				self.artist = (audio.get("artist") or [self.artist])[0]
 				self.album = (audio.get("album") or [self.album])[0]
 				self.is_compilation = (audio.get("compilation") or ["0"])[0] == "1"
+				self.year = self.year or _extract_year_from_candidates(
+					audio.get("originaldate"),
+					audio.get("date"),
+					audio.get("year"),
+				)
 		except Exception as error:
 			if self.debug:
 				print(f"Metadata load failed for {self.path}: {error}")
@@ -155,11 +168,17 @@ class Song:
 		Return a one-line summary for selection lists.
 		"""
 		c = self.Colors
-		return (
-			f"- {os.path.basename(self.path)} | "
-			f"Artist: {c.OKGREEN}{self.artist}{c.ENDC} | "
-			f"Album: {c.OKCYAN}{self.album}{c.ENDC}"
-		)
+		parts = [
+			f"- {os.path.basename(self.path)}",
+			f"Artist: {c.OKGREEN}{self.artist}{c.ENDC}",
+			f"Album: {c.OKCYAN}{self.album}{c.ENDC}",
+		]
+		length_display = self.formatted_length()
+		if length_display:
+			parts.append(f"Length: {length_display}")
+		if self.year:
+			parts.append(f"Year: {self.year}")
+		return " | ".join(parts)
 
 	#============================================
 	def multiline_info(self) -> str:
@@ -167,9 +186,51 @@ class Song:
 		Return a multi-line summary of key fields.
 		"""
 		c = self.Colors
-		return (
-			f"{c.BOLD}Title:{c.ENDC}  {self.title}\n"
-			f"{c.BOLD}Artist:{c.ENDC} {self.artist}\n"
-			f"{c.BOLD}Album:{c.ENDC}  {self.album}\n"
-			f".. Compilation: {self.is_compilation}"
-		)
+		length_display = self.formatted_length()
+		lines = [
+			f"{c.BOLD}Title:{c.ENDC}  {self.title}",
+			f"{c.BOLD}Artist:{c.ENDC} {self.artist}",
+			f"{c.BOLD}Album:{c.ENDC}  {self.album}",
+		]
+		if self.year:
+			lines.append(f"{c.BOLD}Year:{c.ENDC}   {self.year}")
+		if length_display:
+			lines.append(f"{c.BOLD}Length:{c.ENDC} {length_display}")
+		lines.append(f".. Compilation: {self.is_compilation}")
+		return "\n".join(lines)
+
+	#============================================
+	def formatted_length(self) -> str:
+		"""
+		Return length in MM:SS if available.
+		"""
+		if not self.length_seconds or self.length_seconds <= 0:
+			return ""
+		minutes, seconds = divmod(int(self.length_seconds), 60)
+		return f"{minutes:02d}:{seconds:02d}"
+
+#============================================
+def _extract_year_from_candidates(*candidates) -> str | None:
+	for candidate in candidates:
+		year = _extract_year_value(candidate)
+		if year:
+			return year
+	return None
+
+#============================================
+def _extract_year_value(value) -> str | None:
+	if value is None:
+		return None
+	if isinstance(value, list):
+		for entry in value:
+			year = _extract_year_value(entry)
+			if year:
+				return year
+		return None
+	text = str(value).strip()
+	match = re.search(r"(19|20)\d{2}", text)
+	if match:
+		return match.group(0)
+	if text.isdigit() and len(text) == 4:
+		return text
+	return None

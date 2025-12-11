@@ -1,18 +1,24 @@
 #!/usr/bin/env python3
 
 # Standard Library
+import argparse
 import os
 import re
 import time
 import random
+import subprocess
+import warnings
 
 # PIP3 modules
+warnings.filterwarnings("ignore", category=UserWarning, module="pkg_resources")
 import pygame
 try:
 	import pyttsx3
 except ImportError:
 	pyttsx3 = None
 from gtts import gTTS
+
+DEFAULT_ENGINE = "say"
 
 #============================================
 def format_intro_for_tts(text: str) -> str:
@@ -96,15 +102,22 @@ def text_to_speech_gtts(text: str) -> str:
 
 #============================================
 def process_audio_with_sox(input_file: str, speed: float) -> str:
-	processed_mp3 = "temp_processed.mp3"
+	processed_wav = "temp_processed.wav"
 	if input_file.endswith(".mp3"):
-		return _process_mp3_with_sox(input_file, processed_mp3, speed)
-	return _process_wav_with_sox(input_file, processed_mp3, speed)
+		return _process_mp3_with_sox(input_file, processed_wav, speed)
+	return _process_wav_with_sox(input_file, processed_wav, speed)
 
 def _process_mp3_with_sox(input_file: str, output_file: str, speed: float) -> str:
 	intermediate_wav = "temp_intermediate.wav"
-	os.system(f"sox \"{input_file}\" \"{intermediate_wav}\"")
-	os.system(f"sox \"{intermediate_wav}\" \"{output_file}\" tempo {speed} silence 1 0.1 1% -1 0.1 1%")
+	_command_to_wav = f"sox \"{input_file}\" \"{intermediate_wav}\""
+	print(f"[sox] { _command_to_wav }")
+	os.system(_command_to_wav)
+	_command_process = (
+		f"sox \"{intermediate_wav}\" \"{output_file}\" "
+		f"tempo {speed} silence 1 0.1 1% -1 0.4 1%"
+	)
+	print(f"[sox] { _command_process }")
+	os.system(_command_process)
 	if os.path.exists(intermediate_wav):
 		os.remove(intermediate_wav)
 	if os.path.exists(input_file):
@@ -112,7 +125,12 @@ def _process_mp3_with_sox(input_file: str, output_file: str, speed: float) -> st
 	return output_file
 
 def _process_wav_with_sox(input_file: str, output_file: str, speed: float) -> str:
-	os.system(f"sox \"{input_file}\" \"{output_file}\" tempo {speed} silence 1 0.1 1% -1 0.1 1%")
+	command = (
+		f"sox \"{input_file}\" \"{output_file}\" "
+		f"tempo {speed} silence 1 0.1 1% -1 0.4 1%"
+	)
+	print(f"[sox] {command}")
+	os.system(command)
 	if os.path.exists(input_file):
 		os.remove(input_file)
 	return output_file
@@ -124,10 +142,14 @@ def speak_text(text: str, engine: str, save: bool, speed: float):
 		if pyttsx3 is None:
 			raise RuntimeError("pyttsx3 is not installed.")
 		raw_wav = text_to_speech_pyttsx3(text, speed=speed)
+	elif engine == "say":
+		raw_wav = text_to_speech_say(text, speed=speed)
 	else:
 		raw_wav = text_to_speech_gtts(text)
-	final_mp3 = process_audio_with_sox(raw_wav, speed)
-	pygame.mixer.music.load(final_mp3)
+	print(f"[tts] Converting '{raw_wav}' via sox at {speed}x...")
+	final_audio = process_audio_with_sox(raw_wav, speed)
+	print(f"[tts] Playback source: {final_audio}")
+	pygame.mixer.music.load(final_audio)
 	pygame.mixer.music.play()
 	max_duration = len(text.split()) * 0.5 * 2
 	timeout = time.time() + max_duration
@@ -138,24 +160,75 @@ def speak_text(text: str, engine: str, save: bool, speed: float):
 			break
 		time.sleep(0.5)
 	if save:
-		output_file = "output.mp3"
-		os.rename(final_mp3, output_file)
+		output_file = "output.wav"
+		os.rename(final_audio, output_file)
 		print(f"Saved audio to {output_file}")
 	else:
-		if os.path.exists(final_mp3):
-			os.remove(final_mp3)
+		if os.path.exists(final_audio):
+			os.remove(final_audio)
 
 #============================================
-def speak_dj_intro(prompt: str, speed: float) -> None:
+def speak_dj_intro(prompt: str, speed: float, engine: str | None = None) -> None:
 	if not prompt or len(prompt.strip()) < 1:
 		print("No intro text to speak; skipping TTS.")
 		return
+	engine_name = engine or DEFAULT_ENGINE
 	clean_prompt = format_intro_for_tts(prompt)
+	clean_prompt = re.sub(r"^[^A-Za-z0-9]+", "", clean_prompt.strip())
+	clean_prompt = re.sub(r"[^A-Za-z0-9]+$", "", clean_prompt).strip()
 	print(f"Speaking intro ({len(clean_prompt)} chars) at {speed}x speed...")
 	try:
-		speak_text(clean_prompt, engine="gtts", save=False, speed=speed)
+		speak_text(clean_prompt, engine=engine_name, save=False, speed=speed)
 	except Exception as error:
 		print(f"TTS playback error: {error}")
 		return
 	while pygame.mixer.music.get_busy():
 		time.sleep(1)
+def text_to_speech_say(text: str, speed: float) -> str:
+	raw_aiff = "temp_say.aiff"
+	target_wpm = max(80, int(150 * speed))
+	command = [
+		"say",
+		"-r",
+		str(target_wpm),
+		"-o",
+		raw_aiff,
+		text,
+	]
+	print(f"[say] running: {' '.join(command)}")
+	try:
+		subprocess.run(command, check=True)
+	except FileNotFoundError as error:
+		raise RuntimeError("say command not found on this system.") from error
+	if not os.path.exists(raw_aiff):
+		raise RuntimeError("say command did not produce an audio file.")
+	return raw_aiff
+
+#============================================
+def parse_args() -> argparse.Namespace:
+	parser = argparse.ArgumentParser(description="Speak text using the repo TTS helpers.")
+	parser.add_argument("-t", "--text", dest="text", help="Raw text to speak.")
+	parser.add_argument("-f", "--file", dest="file", help="Path to a file containing text to speak.")
+	parser.add_argument("--engine", choices=["say", "gtts", "pyttsx3"], default=DEFAULT_ENGINE, help="TTS engine to use.")
+	parser.add_argument("--speed", type=float, default=1.2, help="Playback speed multiplier (default 1.2).")
+	parser.add_argument("--save", action="store_true", help="Save the generated audio as output.mp3.")
+	return parser.parse_args()
+
+#============================================
+def main() -> None:
+	args = parse_args()
+	text = args.text or ""
+	if args.file:
+		with open(args.file, "r", encoding="utf-8") as handle:
+			text += (" " if text else "") + handle.read()
+	if not text.strip():
+		raise ValueError("Provide text via --text or --file.")
+	print(f"Using engine '{args.engine}' at speed {args.speed}.")
+	try:
+		speak_text(text.strip(), engine=args.engine, save=args.save, speed=args.speed)
+	except Exception as error:
+		print(f"TTS error: {error}")
+
+#============================================
+if __name__ == "__main__":
+	main()

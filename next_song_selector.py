@@ -4,6 +4,7 @@
 import argparse
 import os
 import re
+from dataclasses import dataclass
 
 # Local repo modules
 import llm_wrapper
@@ -21,6 +22,14 @@ class Colors:
 	ENDC = "\033[0m"
 
 #============================================
+@dataclass
+class SelectionResult:
+	song: Song | None
+	choice_text: str
+	reason: str
+	raw_choice: str
+
+#============================================
 def parse_args() -> argparse.Namespace:
 	"""
 	Parse command-line arguments for selector.
@@ -35,7 +44,105 @@ def parse_args() -> argparse.Namespace:
 	return parser.parse_args()
 
 #============================================
-def choose_next_song(current_song: Song, song_list: list[str], sample_size: int, model_name: str | None = None) -> Song | None:
+def clean_llm_choice(choice_text: str | None) -> str:
+	"""
+	Strip obvious noise from the LLM <choice> tag so we can match it to a file.
+	"""
+	if not choice_text:
+		return ""
+	text = choice_text.replace("\\", "/").split("/")[-1]
+	text = text.strip().strip("\"'`")
+	text = re.sub(r"[\n\r\t]+", " ", text)
+	text = re.sub(r"\s+", " ", text)
+	text = re.sub(r"^[\-\*\#\d\.\)\]]+\s*", "", text)
+	return text.strip()
+
+#============================================
+def _candidate_key_variants(value: str) -> set[str]:
+	"""
+	Build normalized forms of a candidate filename so we can compare against messy input.
+	"""
+	base = os.path.basename(value.strip())
+	base = base.strip().strip("\"'`")
+	if not base:
+		return set()
+
+	normalized = re.sub(r"\s+", " ", base)
+	keys = {normalized, normalized.lower()}
+
+	underscore = normalized.replace(" ", "_")
+	keys.update({underscore, underscore.lower()})
+
+	dashed = normalized.replace("_", " ").replace("-", " ")
+	dashed = re.sub(r"\s+", " ", dashed)
+	keys.update({dashed, dashed.lower()})
+
+	root, _ = os.path.splitext(normalized)
+	if root:
+		root_norm = re.sub(r"\s+", " ", root.strip())
+		keys.update({root_norm, root_norm.lower()})
+
+	compact = re.sub(r"[ _\-]+", "", normalized.lower())
+	if compact:
+		keys.add(compact)
+
+	alnum = re.sub(r"[^a-z0-9]", "", normalized.lower())
+	if alnum:
+		keys.add(alnum)
+
+	article = re.sub(r"^(?:the|a|an)[\s_\-]+", "", normalized, flags=re.IGNORECASE).strip()
+	if article and article.lower() != normalized.lower():
+		keys.update({article, article.lower()})
+		article_compact = re.sub(r"[^a-z0-9]", "", article.lower())
+		if article_compact:
+			keys.add(article_compact)
+
+	return {k for k in keys if k}
+
+#============================================
+def match_candidate_choice(choice_text: str, candidates: list[Song]) -> Song | None:
+	"""
+	Attempt to match the sanitized LLM choice against the sampled candidates.
+	"""
+	if not choice_text:
+		return None
+
+	choice_keys = _candidate_key_variants(choice_text)
+	lower_choice = choice_text.lower()
+
+	for song in candidates:
+		base_name = os.path.basename(song.path).strip()
+		if base_name == choice_text or base_name.lower() == lower_choice:
+			return song
+
+	for song in candidates:
+		candidate_keys = _candidate_key_variants(os.path.basename(song.path))
+		if choice_keys.intersection(candidate_keys):
+			return song
+
+	return None
+
+#============================================
+def build_candidate_songs(current_song: Song, song_list: list[str], sample_size: int) -> list[Song]:
+	"""
+	Build a filtered and metadata-enriched candidate pool for the selector.
+	"""
+	if len(song_list) <= 1:
+		return []
+	candidate_paths = audio_utils.select_song_list(song_list, sample_size)
+	while current_song.path in candidate_paths and len(song_list) > 1:
+		candidate_paths = audio_utils.select_song_list(song_list, sample_size)
+
+	candidates = []
+	for path in candidate_paths:
+		song = Song(path)
+		if song.artist == current_song.artist:
+			continue
+		candidates.append(song)
+	return candidates
+
+#============================================
+def choose_next_song(current_song: Song, song_list: list[str], sample_size: int, model_name: str | None = None, candidates: list[Song] | None = None, show_candidates: bool = True) -> SelectionResult:
 	"""
 	Select the next song using an LLM over a sampled candidate pool.
 
@@ -48,30 +155,17 @@ def choose_next_song(current_song: Song, song_list: list[str], sample_size: int,
 		Song | None: Chosen next Song object, or None if selection fails.
 	"""
 	if len(song_list) <= 1:
-		return None
+		return SelectionResult(None, "", "", "")
 
-	# Pick a candidate list and resample if it contains the current song
-	candidate_paths = audio_utils.select_song_list(song_list, sample_size)
-	while current_song.path in candidate_paths and len(song_list) > 1:
-		candidate_paths = audio_utils.select_song_list(song_list, sample_size)
+	candidate_songs = candidates if candidates is not None else build_candidate_songs(current_song, song_list, sample_size)
+	if not candidate_songs:
+		return SelectionResult(None, "", "", "")
 
-	# Build Song objects only for the small candidate set
-	candidates = []
-	for path in candidate_paths:
-		song = Song(path)
-		if song.artist == current_song.artist:
-			continue
-		candidates.append(song)
-
-	if not candidates:
-		return None
-
-	print(f"{Colors.OKMAGENTA}Candidates for next song:{Colors.ENDC}")
-	lines = []
-	for song in candidates:
-		lines.append(song.one_line_info())
-	lines.sort()
-	print('\n'.join(lines))
+	if show_candidates:
+		print(f"{Colors.OKMAGENTA}Candidates for next song:{Colors.ENDC}")
+		lines = [song.one_line_info() for song in candidate_songs]
+		lines.sort()
+		print('\n'.join(lines))
 
 	last_artist = current_song.artist.lower()
 	last_album = current_song.album.lower()
@@ -105,7 +199,7 @@ def choose_next_song(current_song: Song, song_list: list[str], sample_size: int,
 		f"Artist: {last_artist} | Album: {last_album} | Title: {last_title}\n"
 	)
 	prompt += "Candidates:\n"
-	for song in candidates:
+	for song in candidate_songs:
 		prompt += (
 			f"- {os.path.basename(song.path)} | "
 			f"Artist: {song.artist} | Album: {song.album} | Title: {song.title}\n"
@@ -113,28 +207,25 @@ def choose_next_song(current_song: Song, song_list: list[str], sample_size: int,
 
 	model = model_name or llm_wrapper.select_ollama_model()
 	raw = llm_wrapper.query_ollama_model(prompt, model)
-	choice = llm_wrapper.extract_xml_tag(raw, "choice")
-	choice = choice.replace(" ", "_")
-	choice = re.sub("^The_", "", choice)
+	raw_choice = llm_wrapper.extract_xml_tag(raw, "choice")
+	choice = clean_llm_choice(raw_choice)
 	reason = llm_wrapper.extract_xml_tag(raw, "reason")
 
 	if choice:
 		print(f"{Colors.OKGREEN}LLM selection result: {choice}{Colors.ENDC}")
+	elif raw_choice:
+		print(f"{Colors.WARNING}LLM choice text was unusable: {raw_choice}{Colors.ENDC}")
 	if reason:
 		print(f"{Colors.OKMAGENTA}LLM reason: {reason}{Colors.ENDC}")
 
-	chosen_song = None
-	for song in candidates:
-		base_name = os.path.basename(song.path).strip()
-		if base_name == choice.strip():
-			print(f"{Colors.OKCYAN}Final next song: {base_name}{Colors.ENDC}")
-			chosen_song = song
-			break
-
+	chosen_song = match_candidate_choice(choice, candidate_songs)
+	if chosen_song:
+		base_name = os.path.basename(chosen_song.path).strip()
+		print(f"{Colors.OKCYAN}Final next song: {base_name}{Colors.ENDC}")
 	if chosen_song is None:
 		print(f"{Colors.WARNING}LLM choice did not match any candidate; no selection made.{Colors.ENDC}")
 
-	return chosen_song
+	return SelectionResult(chosen_song, choice, reason or "", raw_choice or "")
 
 #============================================
 def main() -> None:
@@ -154,7 +245,8 @@ def main() -> None:
 	print(current_song.one_line_info())
 	print("="*60)
 
-	next_song = choose_next_song(current_song, song_paths, args.sample_size, model_name=model_name)
+	result = choose_next_song(current_song, song_paths, args.sample_size, model_name=model_name)
+	next_song = result.song
 	if next_song:
 		print(f"{Colors.OKCYAN}Next song: {next_song.path}{Colors.ENDC}")
 	else:

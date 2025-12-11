@@ -3,8 +3,10 @@
 # Standard Library
 import os
 import time
+import warnings
 
 # PIP3 modules
+warnings.filterwarnings("ignore", category=UserWarning, module="pkg_resources")
 import pygame
 
 # Local repo modules

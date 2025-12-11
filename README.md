@@ -9,6 +9,8 @@ Features
 --------
 - Reads `.mp3`, `.flac`, `.wav`, `.ogg` files from a directory.
 - Samples N songs for initial choice; subsequent picks are LLM-guided to match energy/tempo without repeating artists back-to-back.
+- Runs two independent next-song prompts against the same candidate pool and, when they disagree, asks a referee LLM (with XML-only output) to choose the smoother follow-up.
+- Generates two DJ intro drafts for auto-selected tracks, shows both, and sends them to a referee LLM that picks the stronger script before TTS.
 - Retrieves metadata/summaries from Wikipedia with Last.fm and AllMusic fallbacks.
 - Builds DJ intros via an LLM and speaks them using TTS.
 - Threaded prep for the next song/intro while the current track plays.
@@ -35,7 +37,7 @@ Usage
 -----
 - Full loop:
   ```
-  ./disc_jockey.py /path/to/music --sample-size 5 --testing
+  ./disc_jockey.py /path/to/music --sample-size 5 --tts-engine say --testing
   ```
 - Metadata lookup:
   ```
@@ -53,16 +55,16 @@ Usage
   ```
 - TTS smoke test:
   ```
-  ./tts_helpers.py -t "Hello listeners" --engine gtts --speed 1.2
+  ./tts_helpers.py -t "Hello listeners" --engine say --speed 1.2
   ```
 
 Flow
 ----
 - Scan music directory, sample N songs for user selection (first track only).
 - Extract metadata and fetch Wikipedia/Last.fm/AllMusic info.
-- Choose an Ollama model automatically and generate the DJ intro via LLM.
+- Choose an Ollama model automatically and generate the DJ intro via LLM (first track runs once to minimize startup delay, subsequent tracks run the dual-prompt + referee flow).
 - Speak the intro with TTS, then play the track.
-- Select the next track via LLM using era/genre/energy/tempo cues, avoid same-artist repeats.
+- Select the next track by running two LLM prompts across the same candidates; if both agree we accept the choice, otherwise a referee LLM compares the reasoning and produces the final `<winner>`.
 - Repeat with threaded prep for the following track.
 
 Testing Steps

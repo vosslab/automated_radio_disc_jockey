@@ -1,5 +1,7 @@
 #!/bin/bash
 
+export PYGAME_HIDE_SUPPORT_PROMPT='hide'
+
 name="ollama_serve"
 if screen -list | grep -q "\.${name}"; then
   echo "Session '$name' already running."

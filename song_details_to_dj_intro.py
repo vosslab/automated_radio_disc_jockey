@@ -39,6 +39,7 @@ def prepare_intro_text(
 	song: audio_utils.Song,
 	prev_song: audio_utils.Song | None = None,
 	model_name: str | None = None,
+	details_text: str | None = None,
 ) -> str:
 	"""
 	Build a DJ prompt for a song, query the LLM, and extract the intro text.
@@ -58,6 +59,7 @@ def prepare_intro_text(
 		song=song,
 		raw_text=None,
 		prev_song=prev_song,
+		details_text=details_text,
 	)
 
 	print(f"{Colors.OKBLUE}Sending prompt to LLM...{Colors.ENDC}")
@@ -79,6 +81,7 @@ def build_prompt(
 	song: audio_utils.Song | None,
 	raw_text: str | None,
 	prev_song: audio_utils.Song | None = None,
+	details_text: str | None = None,
 ) -> str:
 	"""
 	Build the LLM prompt from song metadata or a simple summary.
@@ -111,10 +114,9 @@ def build_prompt(
 		details_intro = "Use the text below as song details.\n\n"
 		details_text = raw_text
 	else:
-		meta = audio_file_to_details.Metadata(song.path)
-		meta.fetch_wikipedia_info()
+		if details_text is None:
+			details_text = fetch_song_details(song)
 		details_intro = "Use the details below about the song. Treat them as authoritative.\n\n"
-		details_text = meta.get_results()
 
 	ending = (
 		"\n\n(**) First, write exactly five lines that each start with 'FACT: ' or 'TRIVIA: '. "
@@ -158,6 +160,12 @@ def build_prompt(
 	prompt += ending + "\n\n"
 
 	return prompt
+
+#============================================
+def fetch_song_details(song: audio_utils.Song) -> str:
+	meta = audio_file_to_details.Metadata(song.path)
+	meta.fetch_wikipedia_info()
+	return meta.get_results()
 
 #============================================
 def main() -> None:
