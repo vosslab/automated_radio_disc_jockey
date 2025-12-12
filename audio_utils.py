@@ -168,16 +168,15 @@ class Song:
 		Return a one-line summary for selection lists.
 		"""
 		c = self.Colors
-		parts = [
-			f"- {os.path.basename(self.path)}",
-			f"Artist: {c.OKGREEN}{self.artist}{c.ENDC}",
-			f"Album: {c.OKCYAN}{self.album}{c.ENDC}",
-		]
+		parts = []
 		length_display = self.formatted_length()
 		if length_display:
-			parts.append(f"Length: {length_display}")
+			parts.append(f"{length_display}")
+		parts.append(f"{os.path.basename(self.path)}")
+		parts.append(f"Artist: {c.OKGREEN}{self.artist}{c.ENDC}")
+		#parts.append(f"Album: {c.OKCYAN}{self.album}{c.ENDC}")
 		if self.year:
-			parts.append(f"Year: {self.year}")
+			parts.append(f"({self.year})")
 		return " | ".join(parts)
 
 	#============================================
