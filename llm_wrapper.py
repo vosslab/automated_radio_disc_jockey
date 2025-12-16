@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 
+import os
 import re
 import subprocess
 import time
+
+# Local repo modules
 
 #============================================
 class Colors:
@@ -72,6 +75,7 @@ def get_vram_size_in_gb() -> int | None:
 		int | None: Size in GB if detected.
 	"""
 	try:
+		# system_profiler is macOS-only; this will fail on Linux/Windows.
 		architecture = subprocess.check_output(["uname", "-m"], text=True).strip()
 		is_apple_silicon = architecture.startswith("arm64")
 		if is_apple_silicon:
@@ -127,18 +131,24 @@ def select_ollama_model() -> str:
 	Raises:
 		RuntimeError: If the chosen model is not available.
 	"""
+	env_model = os.environ.get("OLLAMA_MODEL", "").strip()
+	if env_model:
+		return env_model
+
 	vram_size_gb = get_vram_size_in_gb()
-	if vram_size_gb is None:
-		raise ValueError("Unable to detect VRAM/unified memory for model selection.")
 	available = list_ollama_models()
 
 	model_name = "llama3.2:1b-instruct-q4_K_M"
-	if vram_size_gb > 40:
-		model_name = "gpt-oss:20b"
-	elif vram_size_gb > 14:
-		model_name = "phi4:14b-q4_K_M"
-	elif vram_size_gb > 4:
+	if vram_size_gb is None:
+		# Non-macOS or unknown VRAM: pick a reasonable default and validate availability.
 		model_name = "llama3.2:3b-instruct-q5_K_M"
+	else:
+		if vram_size_gb > 40:
+			model_name = "gpt-oss:20b"
+		elif vram_size_gb > 14:
+			model_name = "phi4:14b-q4_K_M"
+		elif vram_size_gb > 4:
+			model_name = "llama3.2:3b-instruct-q5_K_M"
 
 	if model_name not in available:
 		available_display = ", ".join(available) if available else "none"
@@ -176,6 +186,91 @@ def query_ollama_model(prompt: str, model_name: str) -> str:
 		f"({elapsed:.2f}s).{Colors.ENDC}"
 	)
 	return output
+
+#============================================
+def is_apple_model_available() -> bool:
+	"""
+	Check whether Apple Foundation Models is available and enabled.
+
+	Returns:
+		bool: True if AFM can be used on this machine.
+	"""
+	try:
+		import config_apple_models
+		return config_apple_models.apple_models_available()
+	except Exception:
+		return False
+
+#============================================
+def get_llm_backend(preferred: str | None = None) -> str:
+	"""
+	Resolve which LLM backend to use.
+
+	Priority:
+		1) preferred argument
+		2) DJ_LLM_BACKEND env var
+		3) auto (AFM if available, else Ollama)
+
+	Valid values: auto, afm, ollama
+	"""
+	value = (preferred or os.environ.get("DJ_LLM_BACKEND", "auto")).strip().lower()
+	if value in ("auto", "afm", "ollama"):
+		return value
+	raise ValueError("DJ_LLM_BACKEND must be one of: auto, afm, ollama")
+
+#============================================
+def get_default_model_name(backend: str | None = None) -> str | None:
+	"""
+	Get a default model name for the active backend.
+
+	Returns:
+		str | None: Ollama model name, or None for AFM.
+	"""
+	chosen = get_llm_backend(backend)
+	if chosen == "afm":
+		return None
+	if chosen == "auto" and is_apple_model_available():
+		return None
+	return select_ollama_model()
+
+#============================================
+def run_llm(
+	prompt: str,
+	model_name: str | None = None,
+	backend: str | None = None,
+	max_tokens: int | None = None,
+) -> str:
+	"""
+	Run an LLM call using the configured backend.
+
+	Args:
+		prompt (str): Prompt text.
+		model_name (str | None): Ollama model to use (ignored by AFM).
+		backend (str | None): Override backend (auto/afm/ollama).
+		max_tokens (int | None): Backend-specific generation limit.
+
+	Returns:
+		str: Raw model output (may be empty on error).
+	"""
+	chosen = get_llm_backend(backend)
+	if chosen == "auto":
+		chosen = "afm" if is_apple_model_available() else "ollama"
+
+	if chosen == "afm":
+		try:
+			import config_apple_models
+			print(f"{Colors.OKBLUE}Sending prompt to Apple Foundation Models...{Colors.ENDC}")
+			print(f"{Colors.WARNING}Waiting for response...{Colors.ENDC}")
+			return config_apple_models.run_apple_model(
+				prompt,
+				max_tokens=max_tokens or 1200,
+			)
+		except Exception as error:
+			print(f"{Colors.FAIL}AFM error: {error}{Colors.ENDC}")
+			return ""
+
+	ollama_model = model_name or select_ollama_model()
+	return query_ollama_model(prompt, ollama_model)
 
 #============================================
 def extract_response_text(raw_text: str) -> str:

@@ -40,6 +40,7 @@ def prepare_intro_text(
 	prev_song: audio_utils.Song | None = None,
 	model_name: str | None = None,
 	details_text: str | None = None,
+	strict_reminder: bool = False,
 ) -> str:
 	"""
 	Build a DJ prompt for a song, query the LLM, and extract the intro text.
@@ -61,9 +62,15 @@ def prepare_intro_text(
 		prev_song=prev_song,
 		details_text=details_text,
 	)
+	if strict_reminder:
+		prompt += "\n(**) IMPORTANT VALIDATION RULES:\n"
+		prompt += "- The FACT/TRIVIA lines must be outside <response> tags.\n"
+		prompt += "- The <response> must contain ONLY the final spoken intro.\n"
+		prompt += "- The <response> must be 3-5 sentences and at least 200 characters.\n"
+		prompt += "- Do not include the strings 'FACT:' or 'TRIVIA:' inside <response>.\n"
 
 	print(f"{Colors.OKBLUE}Sending prompt to LLM...{Colors.ENDC}")
-	dj_intro = llm_wrapper.query_ollama_model(prompt, model_name)
+	dj_intro = llm_wrapper.run_llm(prompt, model_name=model_name)
 
 	print(f"{Colors.OKGREEN}Received LLM output; extracting <response> block...{Colors.ENDC}")
 	# Use the generic XML extractor for the response tag
@@ -134,6 +141,9 @@ def build_prompt(
 		"the final handoff to the song. "
 		"End by repeating the band name and song title. "
 		"Keep the intro to 3-5 sentences. "
+		"The <response> block must contain ONLY the final intro text. "
+		"Do NOT include any 'FACT:' or 'TRIVIA:' lines inside <response>. "
+		"The <response> must be at least 200 characters. "
 		"Wrap the final spoken intro inside <response>...</response>."
 	)
 
@@ -173,10 +183,18 @@ def main() -> None:
 	if not args.input_file and not args.text:
 		raise ValueError("Provide a song file (-i) or raw text (-t).")
 	song_obj = audio_utils.Song(args.input_file) if args.input_file else None
-	prompt = build_prompt(song_obj, args.use_metadata, args.text)
+	prev_song = None
+
+	if args.text:
+		prompt = build_prompt(song=None, raw_text=args.text, prev_song=prev_song, details_text=None)
+	else:
+		details_text = None
+		if not args.use_metadata and song_obj:
+			details_text = song_obj.one_line_info()
+		prompt = build_prompt(song=song_obj, raw_text=None, prev_song=prev_song, details_text=details_text)
+
 	print(f"{Colors.OKBLUE}Sending prompt to LLM...{Colors.ENDC}")
-	model_name = llm_wrapper.select_ollama_model()
-	raw = llm_wrapper.query_ollama_model(prompt, model_name)
+	raw = llm_wrapper.run_llm(prompt)
 	intro = llm_wrapper.extract_response_text(raw)
 	if intro:
 		print(f"{Colors.OKGREEN}DJ Intro:{Colors.ENDC}")

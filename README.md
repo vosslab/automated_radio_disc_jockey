@@ -20,7 +20,16 @@ Requirements
 - Python 3.10+
 - System: `sox` (for TTS post-processing), `ffmpeg` if additional codecs are needed.
 - Python: `gtts`, `mutagen`, `pygame`, `wikipedia` (`pip install -r requirements.txt`).
-- Ollama running locally; model selection is automatic (`llm_wrapper.py`).
+- LLM backend:
+  - Default: Ollama running locally (model selection is automatic via `llm_wrapper.py`).
+  - Optional: Apple Foundation Models on Apple Silicon macOS 26+ with Apple Intelligence enabled.
+
+LLM Backend Selection
+---------------------
+- `DJ_LLM_BACKEND=auto` (default): use Apple Foundation Models if available, else Ollama.
+- `DJ_LLM_BACKEND=afm`: force Apple Foundation Models.
+- `DJ_LLM_BACKEND=ollama`: force Ollama.
+- Optional Ollama override: `OLLAMA_MODEL=your-model-name`.
 
 Key Modules
 -----------

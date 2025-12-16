@@ -47,11 +47,11 @@ def format_intro_for_tts(text: str) -> str:
 		if not segment:
 			continue
 		# Split long "X and Y" sentences into smaller chunks
-		if " and " in segment:
-			parts = [part.strip() for part in segment.split(" and ") if part.strip()]
-			clean_segments.extend(parts)
-		else:
-			clean_segments.append(segment)
+		#if " and " in segment:
+		#	parts = [part.strip() for part in segment.split(" and ") if part.strip()]
+		#	clean_segments.extend(parts)
+		#else:
+		clean_segments.append(segment)
 
 	if not clean_segments:
 		return ""

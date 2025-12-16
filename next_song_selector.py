@@ -188,11 +188,14 @@ def choose_next_song(current_song: Song, song_list: list[str], sample_size: int,
 	prompt += "\n(3) Rank those four by how well they fit after the current track. "
 	prompt += "Use the numerical rankings as the primary factors. "
 	prompt += "\n(4) After ranking the top four choices, choose the single best track as the next song. "
-	prompt += "\n(5) In your reasoning, briefly explain why the other rejected tracks are weaker fits "
-	prompt += "using the numerical rankings than the final choice. "
+	prompt += "\n(5) In your reasoning, be moderately detailed but strictly bounded. "
+	prompt += "Inside <reason>, write 2-4 sentences (max 80 words). "
+	prompt += "You must include: "
+	prompt += "(a) the final pick's 7-number summary as 'P,G,I,S,T,M,CA = x,x,x,x,x,x,x', and "
+	prompt += "(b) exactly two runner-up filenames and one short clause for each explaining why they lost. "
 	prompt += "\n(6) Use the file names exactly as shown in the candidate list. "
 	prompt += "\n(7) select the least jarring and the most 'this DJ knows what they are doing' choice."
-	prompt += "\n(8) keep your output other than the response short and to the point."
+	prompt += "\n(8) Keep your output tightly structured and short."
 	prompt += "\n(9) Respond with these two specific XML tags for processing "
 	prompt += "<choice>FILENAME.mp3</choice>"
 	prompt += "<reason>WHY YOU PICKED IT AND BREAKDOWN OF WHY THE OTHER TOP SONGS WERE REJECTED</reason>\n"
@@ -207,8 +210,7 @@ def choose_next_song(current_song: Song, song_list: list[str], sample_size: int,
 			f"Artist: {song.artist} | Album: {song.album} | Title: {song.title}\n"
 		)
 
-	model = model_name or llm_wrapper.select_ollama_model()
-	raw = llm_wrapper.query_ollama_model(prompt, model)
+	raw = llm_wrapper.run_llm(prompt, model_name=model_name)
 	raw_choice = llm_wrapper.extract_xml_tag(raw, "choice")
 	choice = clean_llm_choice(raw_choice)
 	reason = llm_wrapper.extract_xml_tag(raw, "reason")
@@ -235,7 +237,7 @@ def main() -> None:
 
 	# Keep library as paths, cheap
 	song_paths = audio_utils.get_song_list(args.directory)
-	model_name = llm_wrapper.select_ollama_model()
+	model_name = llm_wrapper.get_default_model_name()
 
 	current_path = os.path.abspath(args.current)
 	if current_path not in song_paths:

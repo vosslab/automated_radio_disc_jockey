@@ -5,6 +5,7 @@ import os
 import time
 import argparse
 import threading
+import re
 
 # PIP3 modules
 
@@ -68,7 +69,7 @@ class DiscJockey:
 		self.queued_intro = ""
 		self.previous_song: audio_utils.Song | None = None
 		self.history = HistoryLogger()
-		self.model_name = llm_wrapper.select_ollama_model()
+		self.model_name = llm_wrapper.get_default_model_name()
 		tts_helpers.DEFAULT_ENGINE = args.tts_engine
 
 	#============================================
@@ -249,21 +250,72 @@ class DiscJockey:
 			print(f"{Colors.WARNING}Failed to fetch song details for intro referee: {error}{Colors.ENDC}")
 			return ""
 
+		def _normalize_match_text(value: str) -> str:
+			text = value.lower()
+			text = re.sub(r"[^a-z0-9]+", "", text)
+			return text
+
+		def _estimate_sentence_count(text: str) -> int:
+			parts = re.split(r"[.!?]+", text)
+			sentences = 0
+			for part in parts:
+				words = part.strip().split()
+				if len(words) >= 3:
+					sentences += 1
+			return sentences
+
+		def _is_intro_usable(intro: str) -> tuple[bool, str]:
+			if not intro:
+				return (False, "empty intro")
+			text = intro.strip()
+			lowered = text.lower()
+			if "<response" in lowered or "</response" in lowered:
+				return (False, "contains XML tags")
+			if "fact:" in lowered or "trivia:" in lowered:
+				return (False, "contains FACT/TRIVIA lines")
+			if len(text) < 200:
+				return (False, "too short (<200 chars)")
+			if len(text.split()) < 35:
+				return (False, "too short (<35 words)")
+			sentence_count = _estimate_sentence_count(text)
+			if sentence_count < 3:
+				return (False, "not enough sentences (<3)")
+
+			intro_norm = _normalize_match_text(text)
+			title_norm = _normalize_match_text(song.title or "")
+			artist_norm = _normalize_match_text(song.artist or "")
+			if title_norm and title_norm not in intro_norm:
+				return (False, "missing song title mention")
+			if song.artist and song.artist != "Unknown Artist" and artist_norm and artist_norm not in intro_norm:
+				return (False, "missing artist mention")
+
+			return (True, "")
+
 		candidates: list[tuple[str, str]] = []
 		for label in ("A", "B"):
 			print(f"{Colors.OKBLUE}Generating DJ intro option {label}...{Colors.ENDC}")
-			intro = song_details_to_dj_intro.prepare_intro_text(
-				song,
-				prev_song=prev_song,
-				model_name=self.model_name,
-				details_text=details_text,
-			)
-			if intro and intro.strip():
-				clean_intro = intro.strip()
-				print(f"{Colors.OKMAGENTA}Intro Option {label}:{Colors.ENDC}\n{clean_intro}\n{'-'*60}")
-				candidates.append((label, clean_intro))
+			max_intro_attempts = 2
+			intro = ""
+			for attempt in range(max_intro_attempts):
+				intro = song_details_to_dj_intro.prepare_intro_text(
+					song,
+					prev_song=prev_song,
+					model_name=self.model_name,
+					details_text=details_text,
+					strict_reminder=(attempt > 0),
+				) or ""
+				intro = intro.strip()
+				ok, reason = _is_intro_usable(intro)
+				if ok:
+					break
+				print(f"{Colors.WARNING}Intro option {label} attempt {attempt + 1} rejected: {reason}{Colors.ENDC}")
+				intro = ""
+
+			if intro:
+				print(f"{Colors.OKMAGENTA}Intro Option {label}:{Colors.ENDC}\n{intro}\n{'-'*60}")
+				candidates.append((label, intro))
 			else:
-				print(f"{Colors.WARNING}Intro option {label} returned empty text.{Colors.ENDC}")
+				print(f"{Colors.WARNING}Intro option {label} failed validation; skipping it.{Colors.ENDC}")
 
 		if not candidates:
 			print(f"{Colors.FAIL}All DJ intro attempts failed; no intro will be queued.{Colors.ENDC}")
@@ -292,6 +344,9 @@ class DiscJockey:
 		prompt += "You are judging two DJ introductions for the same song.\n"
 		prompt += "Pick the intro that sounds natural, uses concrete facts from the song details, "
 		prompt += "and creates a smooth handoff from the previous track.\n"
+		prompt += "\nDisqualifying rules: if an option includes 'FACT:' or 'TRIVIA:' in the intro text, "
+		prompt += "is fewer than 3 sentences, or fails to mention the artist and song title, it must lose.\n"
+		prompt += "Do not prefer an option just because it is shorter.\n"
 		prompt += "(***) Current song summary:\n"
 		prompt += song.one_line_info() + "\n"
 		if prev_song:
@@ -306,10 +361,11 @@ class DiscJockey:
 		prompt += (
 			"\nRespond ONLY with these XML tags on a single line. "
 			"The <winner> tag must contain only the letter A or B (no extra words). "
+			"The <reason> must be 1-2 sentences (max 40 words). "
 			"<winner>A or B</winner><reason>Explain why that intro is better.</reason>\n"
 		)
 
-		raw = llm_wrapper.query_ollama_model(prompt, self.model_name)
+		raw = llm_wrapper.run_llm(prompt, model_name=self.model_name)
 		winner_text = llm_wrapper.extract_xml_tag(raw, "winner")
 		ref_reason = llm_wrapper.extract_xml_tag(raw, "reason")
 
@@ -369,7 +425,7 @@ class DiscJockey:
 		max_attempts = 2
 		for attempt in range(max_attempts):
 			prompt = self._build_referee_prompt(current_song, candidate_lines, results, attempt > 0)
-			raw = llm_wrapper.query_ollama_model(prompt, self.model_name)
+			raw = llm_wrapper.run_llm(prompt, model_name=self.model_name)
 			raw_output = raw.strip() if raw else ""
 			winner_text = llm_wrapper.extract_xml_tag(raw, "winner")
 			ref_reason = llm_wrapper.extract_xml_tag(raw, "reason")
