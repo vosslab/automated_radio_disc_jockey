@@ -40,7 +40,7 @@ This repo is split into small scripts that can be run independently or orchestra
 - TTS test: `./speak_something.py -t "Hello" --speed 1.2`
 - Full loop: `./disc_jockey.py -d /path/to/music -n 10 --testing`
 <<<<<<< HEAD:AGENTS.md
-See Python coding style in PYTHON_STYLE.md.
+See Python coding style in docs/PYTHON_STYLE.md.
 =======
 See Python coding style in docs/PYTHON_STYLE.md.
 ## Coding Style
