@@ -8,9 +8,9 @@ Language Model guide to Neil python3 programming
 
 ## USE TABS
 
-* Always use tabs for indentation in python3 code, never spaces! 
-* I disagree with PEP 8 requirement of spaces. Using spaces causes a lot more deleting and formatting work. 
-* I use tabs exclusively. 
+* Always use tabs for indentation in python3 code, never spaces!
+* I disagree with PEP 8 requirement of spaces. Using spaces causes a lot more deleting and formatting work.
+* I use tabs exclusively.
 * Tabs provide flexibility, because I can change the tab size to 2, 3, 4, or 8 spaces depending on the complexity of the code.
 
 ## CODE STRUCTURE
@@ -24,9 +24,22 @@ Language Model guide to Neil python3 programming
 - Use f-strings, in older code I used `.format()` or `'%'` system, update to f-strings.
 - I prefer string concatenation `'+='` over multiline strings.
 - Start off python3 programs with the line `#!/usr/bin/env python3` to make them executable
-- return statements should be simple and not perform calculations, or fill out a dict, calculations and values should be stored in a variable and then return the variable.
+- Return statements should be simple and should not perform calculations, fill out a dict, or build strings. Store computed values and assembled strings in variables first, including any multiline HTML or text, then return the variable.
 - add comments within the code to describe what different lines are doing, to make for better readability later. especially for complex lines!
 - Please only use ascii characters in the script, if utf characters are need they should be escape e.g. `&alpha;` `&lrarr;`
+
+## QUOTING
+* Avoid backslash escaping quotes inside strings when possible.
+* Prefer alternating quote styles instead:
+* Use double quotes on the outside with single quotes inside.
+* Or use single quotes on the outside with double quotes inside.
+* This is especially useful for HTML like "<span style='...'>text</span>".
+
+## HTML UNITS IN MONOSPACE
+* When generating HTML for lab problems, render numeric values and their units in monospace for readability and alignment.
+* Use a span like:
+
+volume_text = f"<span style='font-family: monospace;'>{vol1:.1f} mL</span>"
 
 ## TESTING
 
@@ -47,6 +60,38 @@ fi
 echo "Found ${RESULT} pyflakes errors"
 exit 1
 ```
+
+## DO NOT USE HEREDOCS
+
+* Do not use shell heredocs to run inline Python code.
+* Avoid patterns like `python3 - <<EOF`.
+* Python code should live in `.py` files or be passed explicitly as files or modules.
+* Heredocs make code harder to read, harder to lint, and harder to test.
+
+Here is a tightened version that keeps the rule and examples, without extra explanation.
+
+## ENVIRONMENT VARIABLES
+
+The program should not require custom environment variables to function. Configuration must be explicit and visible via config files or command line arguments. Environment variables may be read only when they are standard OS or ecosystem variables, not variables invented to control program behavior.
+
+### Allowed
+
+```python
+home_dir = os.environ["HOME"]
+editor = os.environ.get("EDITOR", "nano")
+tmp_dir = os.environ.get("TMPDIR", "/tmp")
+is_ci = os.environ.get("CI") == "true"
+```
+
+### Disallowed
+
+```python
+api_key = os.environ["API_KEY"]
+preserve_temp = os.environ.get("PRESERVE_TEMP_FILES") == "1"
+debug_mode = os.environ.get("DEBUG_MODE") == "true"
+```
+
+For api keys, mode settings, or temp variables use argparse, config files, or function arguments instead. Rule of thumb: If a variable exists only because the script exists, it does not belong in the environment.
 
 ## COMMENTING
 
@@ -175,7 +220,7 @@ accelerate  # Hugging Face helper for running PyTorch training
 biopython  # Bioinformatics tools for sequences, structures
 brickse  # Brickset related utilities or API client for LEGO set date
 crcmod  # Fast CRC checksum functions (CRC-32, CRC-16)
-curl_cffi  # HTTP client using libcurl via cffi, for browser-like TLS 
+curl_cffi  # HTTP client using libcurl via cffi, for browser-like TLS
 einops  # Clean tensor reshaping and rearranging (works with numpy, torch, etc.)
 face_recognition  # Simple face detection and recognition built on dlib
 google-api-python-client  # Official Google API client for many Google services

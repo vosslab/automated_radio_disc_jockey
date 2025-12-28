@@ -39,4 +39,13 @@ This repo is split into small scripts that can be run independently or orchestra
 - Next-song choice: `./next_song_selector.py -c current.mp3 -d /path/to/music -n 10`
 - TTS test: `./speak_something.py -t "Hello" --speed 1.2`
 - Full loop: `./disc_jockey.py -d /path/to/music -n 10 --testing`
+<<<<<<< HEAD:AGENTS.md
 See Python coding style in PYTHON_STYLE.md.
+=======
+See Python coding style in docs/PYTHON_STYLE.md.
+## Coding Style
+See Markdown style in docs/MARKDOWN_STYLE.md.
+When making edits, document them in docs/CHANGELOG.md.
+See repo style in docs/REPO_STYLE.md.
+Agents may run programs in the tests folder, including smoke tests and pyflakes/mypy runner scripts.
+>>>>>>> a13525f (updated style guides):Agents.md
