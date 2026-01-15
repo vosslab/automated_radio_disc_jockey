@@ -39,13 +39,16 @@ This repo is split into small scripts that can be run independently or orchestra
 - Next-song choice: `./next_song_selector.py -c current.mp3 -d /path/to/music -n 10`
 - TTS test: `./speak_something.py -t "Hello" --speed 1.2`
 - Full loop: `./disc_jockey.py -d /path/to/music -n 10 --testing`
-<<<<<<< HEAD:AGENTS.md
-See Python coding style in docs/PYTHON_STYLE.md.
-=======
-See Python coding style in docs/PYTHON_STYLE.md.
+
 ## Coding Style
+See Python coding style in docs/PYTHON_STYLE.md.
 See Markdown style in docs/MARKDOWN_STYLE.md.
 When making edits, document them in docs/CHANGELOG.md.
 See repo style in docs/REPO_STYLE.md.
 Agents may run programs in the tests folder, including smoke tests and pyflakes/mypy runner scripts.
->>>>>>> a13525f (updated style guides):Agents.md
+
+## Environment
+Codex must run Python using `/opt/homebrew/opt/python@3.12/bin/python3.12` (use Python 3.12 only).
+On this user's macOS (Homebrew Python 3.12), Python modules are installed to `/opt/homebrew/lib/python3.12/site-packages/`.
+When in doubt, implement the changes the user asked for rather than waiting for a response; the user is not the best reader and will likely miss your request and then be confused why it was not implemented or fixed.
+When changing code always run tests, documentation does not require tests.
