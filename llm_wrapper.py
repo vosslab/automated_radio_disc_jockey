@@ -2,8 +2,10 @@
 
 import os
 import re
-import subprocess
 import time
+import hashlib
+import datetime
+import subprocess
 
 # Local repo modules
 
@@ -16,6 +18,46 @@ class Colors:
 	WARNING = "\033[93m"
 	FAIL = "\033[91m"
 	ENDC = "\033[0m"
+
+#============================================
+LLM_LOG_PATH = os.path.join("output", "llm_responses.log")
+
+#============================================
+def _log_llm_exchange(
+	prompt: str,
+	response: str,
+	backend: str,
+	model_name: str | None,
+	elapsed: float,
+	error_text: str | None = None,
+) -> None:
+	"""
+	Append a formatted LLM exchange entry to the log file.
+	"""
+	try:
+		log_dir = os.path.dirname(LLM_LOG_PATH)
+		if log_dir:
+			os.makedirs(log_dir, exist_ok=True)
+		timestamp = datetime.datetime.now().isoformat(timespec="seconds")
+		prompt_text = prompt or ""
+		response_text = response or ""
+		prompt_hash = hashlib.sha256(prompt_text.encode("utf-8")).hexdigest()
+		with open(LLM_LOG_PATH, "a", encoding="utf-8") as handle:
+			handle.write("=" * 72 + "\n")
+			handle.write(f"Timestamp: {timestamp}\n")
+			handle.write(f"Backend: {backend}\n")
+			handle.write(f"Model: {model_name or 'n/a'}\n")
+			handle.write(f"Elapsed: {elapsed:.2f}s\n")
+			handle.write(f"Prompt SHA256: {prompt_hash}\n")
+			if error_text:
+				handle.write(f"Error: {error_text}\n")
+			handle.write("Prompt:\n")
+			handle.write(prompt_text.strip() + "\n")
+			handle.write("Response:\n")
+			handle.write(response_text.strip() + "\n")
+			handle.write("=" * 72 + "\n\n")
+	except Exception:
+		return
 
 #============================================
 def extract_xml_tag(raw_text: str, tag: str) -> str:
@@ -256,21 +298,33 @@ def run_llm(
 	if chosen == "auto":
 		chosen = "afm" if is_apple_model_available() else "ollama"
 
+	start_time = time.time()
+	response = ""
+	error_text = ""
+	resolved_model = model_name
+
 	if chosen == "afm":
 		try:
 			import config_apple_models
 			print(f"{Colors.OKBLUE}Sending prompt to Apple Foundation Models...{Colors.ENDC}")
 			print(f"{Colors.WARNING}Waiting for response...{Colors.ENDC}")
-			return config_apple_models.run_apple_model(
+			response = config_apple_models.run_apple_model(
 				prompt,
 				max_tokens=max_tokens or 1200,
 			)
 		except Exception as error:
+			error_text = str(error)
 			print(f"{Colors.FAIL}AFM error: {error}{Colors.ENDC}")
-			return ""
+	else:
+		resolved_model = resolved_model or select_ollama_model()
+		response = query_ollama_model(prompt, resolved_model)
 
-	ollama_model = model_name or select_ollama_model()
-	return query_ollama_model(prompt, ollama_model)
+	elapsed = time.time() - start_time
+	_log_llm_exchange(prompt, response, chosen, resolved_model, elapsed, error_text or None)
+
+	if error_text:
+		return ""
+	return response
 
 #============================================
 def extract_response_text(raw_text: str) -> str:

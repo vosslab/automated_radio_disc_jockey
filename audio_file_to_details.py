@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
 
-import argparse
-import random
+# Standard Library
 import re
+import html
+import json
 import time
+import random
+from typing import Optional
+from typing import Tuple
+import argparse
 import urllib.parse
 import urllib.request
-import html
-import warnings
-from bs4 import GuessedAtParserWarning
-from typing import Optional, Tuple
 
+# PIP3 modules
 import mutagen
-import wikipedia
-from mutagen.flac import FLAC
-from mutagen.mp3 import MP3
+import mutagen.mp3
+import mutagen.flac
 
 #============================================
 class Colors:
@@ -76,14 +77,14 @@ class Metadata:
 		Tries to be resilient to missing tags.
 		"""
 		if self.filename.lower().endswith(".mp3"):
-			audio = MP3(self.filename, ID3=mutagen.easyid3.EasyID3)
+			audio = mutagen.mp3.MP3(self.filename, ID3=mutagen.easyid3.EasyID3)
 			self.title = (audio.get('title') or [self.title])[0]
 			self.artist = (audio.get('artist') or [self.artist])[0]
 			self.album = (audio.get('album') or [self.album])[0]
 			self.is_compilation = (audio.get('TCMP') or ['0'])[0] == '1'
 
 		elif self.filename.lower().endswith(".flac"):
-			audio = FLAC(self.filename)
+			audio = mutagen.flac.FLAC(self.filename)
 			self.title = (audio.get('title') or [self.title])[0]
 			self.artist = (audio.get('artist') or [self.artist])[0]
 			self.album = (audio.get('album') or [self.album])[0]
@@ -190,52 +191,101 @@ class Metadata:
 		return title.strip()
 
 	#============================================
+	def _fetch_wikipedia_search_titles(self, query: str) -> list:
+		"""
+		Searches Wikipedia and returns a list of candidate titles.
+		"""
+		if self.debug is True:
+			print(f"Searching wikipedia: query='{query}'")
+		params = {
+			"action": "query",
+			"list": "search",
+			"srsearch": query,
+			"srlimit": "5",
+			"format": "json",
+		}
+		search_url = "https://en.wikipedia.org/w/api.php?" + urllib.parse.urlencode(params)
+		time.sleep(random.random())  # Prevent overloading Wikipedia
+		req = urllib.request.Request(search_url, headers={"User-Agent": "Mozilla/5.0"})
+		try:
+			with urllib.request.urlopen(req, timeout=5) as resp:
+				if resp.status != 200:
+					return []
+				payload = resp.read().decode("utf-8", errors="ignore")
+		except Exception as error:
+			if self.debug:
+				print(f".. Wikipedia search error: {error}")
+			return []
+		try:
+			data = json.loads(payload)
+		except json.JSONDecodeError as error:
+			if self.debug:
+				print(f".. Wikipedia JSON parse error: {error}")
+			return []
+		results = data.get("query", {}).get("search", [])
+		titles = []
+		for item in results:
+			title = item.get("title")
+			if title:
+				titles.append(title)
+		return titles
+
+	#============================================
+	def _fetch_wikipedia_summary(self, title: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+		"""
+		Fetches a summary for a Wikipedia title using the REST API.
+		"""
+		safe_title = urllib.parse.quote(title)
+		summary_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{safe_title}"
+		time.sleep(random.random())  # Delay for API call
+		req = urllib.request.Request(summary_url, headers={"User-Agent": "Mozilla/5.0"})
+		try:
+			with urllib.request.urlopen(req, timeout=5) as resp:
+				if resp.status != 200:
+					return None, None, None
+				payload = resp.read().decode("utf-8", errors="ignore")
+		except Exception as error:
+			if self.debug:
+				print(f".. Wikipedia summary error for {title}: {error}")
+			return None, None, None
+		try:
+			data = json.loads(payload)
+		except json.JSONDecodeError as error:
+			if self.debug:
+				print(f".. Wikipedia summary JSON parse error: {error}")
+			return None, None, None
+		if data.get("type") == "disambiguation":
+			return None, None, None
+		extract = data.get("extract")
+		if not extract:
+			return None, None, None
+		page_title = data.get("title", title)
+		page_url = None
+		content_urls = data.get("content_urls", {})
+		desktop_urls = content_urls.get("desktop", {})
+		if desktop_urls:
+			page_url = desktop_urls.get("page")
+		if not page_url:
+			slug = urllib.parse.quote(page_title.replace(" ", "_"))
+			page_url = f"https://en.wikipedia.org/wiki/{slug}"
+		return page_title, page_url, extract
+
+	#============================================
 	def search_wikipedia(self, query: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
 		"""
 		Searches Wikipedia and returns the best match (title, URL, summary).
 		"""
-		if self.debug is True:
-			print(f"Searching wikipedia: query='{query}'")
-		time.sleep(random.random())  # Prevent overloading Wikipedia
-		with warnings.catch_warnings():
-			warnings.simplefilter("ignore", GuessedAtParserWarning)
-			try:
-				results = wikipedia.search(query)
-			except wikipedia.exceptions.WikipediaException:
-				time.sleep(5)
-				results = wikipedia.search(query)
-		if not results:
+		titles = self._fetch_wikipedia_search_titles(query)
+		if not titles:
 			return None, None, None  # No results found
-
-		options = results[:3]  # Try a few options to avoid disambiguation pitfalls
+		options = titles[:3]  # Try a few options to avoid disambiguation pitfalls
 		for candidate in options:
-			time.sleep(random.random())  # Delay for API call
-			try:
-				with warnings.catch_warnings():
-					warnings.simplefilter("ignore", GuessedAtParserWarning)
-					page = wikipedia.page(candidate, auto_suggest=True)
-				clean_summary_text = self._clean_summary(page.summary)
+			page_title, page_url, summary = self._fetch_wikipedia_summary(candidate)
+			if summary:
+				clean_summary_text = self._clean_summary(summary)
 				if self.debug is True:
 					print(f".. Summary for {candidate}: {clean_summary_text[:100]}")
-				return page.title, page.url, clean_summary_text
-			except wikipedia.exceptions.DisambiguationError as e:
-				if self.debug:
-					print(f"Disambiguation for '{candidate}': options={e.options[:3]}")
-				# try first disambiguation option
-				try:
-					with warnings.catch_warnings():
-						warnings.simplefilter("ignore", GuessedAtParserWarning)
-						page = wikipedia.page(e.options[0], auto_suggest=True)
-					return page.title, page.url, self._clean_summary(page.summary)
-				except Exception as inner_error:
-					if self.debug:
-						print(f".. Disambiguation follow-up failed: {inner_error}")
-			except wikipedia.exceptions.PageError as page_error:
-				if self.debug:
-					print(f".. PageError: {page_error}")
-			except Exception as error:
-				if self.debug:
-					print(f".. Wikipedia lookup error for {candidate}: {error}")
+				return page_title, page_url, clean_summary_text
 		return None, None, None
 
 	#============================================

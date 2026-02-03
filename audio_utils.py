@@ -2,11 +2,14 @@
 
 # Standard Library
 import os
-import random
 import re
+import random
+
+# PIP3 modules
 import mutagen
-from mutagen.mp3 import MP3
-from mutagen.flac import FLAC
+import mutagen.mp3
+import mutagen.flac
+import mutagen.easyid3
 
 #============================================
 class Colors:
@@ -24,7 +27,7 @@ class Colors:
 #============================================
 def get_song_list(directory: str) -> list:
 	"""
-	Collect supported audio files from a directory.
+	Collect supported audio files from a directory tree.
 
 	Args:
 		directory (str): Path to music directory.
@@ -37,13 +40,15 @@ def get_song_list(directory: str) -> list:
 		raise FileNotFoundError(f"Music directory not found: {directory}")
 
 	song_list = []
-	for entry in os.listdir(directory):
-		path = os.path.join(directory, entry)
-		if os.path.isfile(path) and os.path.splitext(entry)[1].lower() in audio_extensions:
-			song_list.append(path)
+	for root, _, files in os.walk(directory):
+		for filename in files:
+			extension = os.path.splitext(filename)[1].lower()
+			if extension in audio_extensions:
+				song_list.append(os.path.join(root, filename))
 
 	if not song_list:
 		raise RuntimeError(f"No audio files found in {directory}")
+	song_list.sort()
 	return song_list
 
 #============================================
@@ -134,7 +139,7 @@ class Song:
 		lower = self.path.lower()
 		try:
 			if lower.endswith(".mp3"):
-				audio = MP3(self.path, ID3=mutagen.easyid3.EasyID3)
+				audio = mutagen.mp3.MP3(self.path, ID3=mutagen.easyid3.EasyID3)
 				self.length_seconds = int(audio.info.length) if audio.info and audio.info.length else None
 				self.title = (audio.get("title") or [self.title])[0]
 				self.artist = (audio.get("artist") or [self.artist])[0]
@@ -147,7 +152,7 @@ class Song:
 					getattr(audio, "tags", {}).get("TDRC") if getattr(audio, "tags", None) else None,
 				)
 			elif lower.endswith(".flac"):
-				audio = FLAC(self.path)
+				audio = mutagen.flac.FLAC(self.path)
 				self.length_seconds = int(audio.info.length) if audio.info and audio.info.length else None
 				self.title = (audio.get("title") or [self.title])[0]
 				self.artist = (audio.get("artist") or [self.artist])[0]

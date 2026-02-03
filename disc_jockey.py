@@ -6,6 +6,7 @@ import time
 import argparse
 import threading
 import re
+import random
 
 # PIP3 modules
 
@@ -30,6 +31,9 @@ class Colors:
 	ENDC = "\033[0m"
 	BOLD = "\033[1m"
 	UNDERLINE = "\033[4m"
+
+#============================================
+MAX_NEXT_SONG_ATTEMPTS = 5
 
 #============================================
 class HistoryLogger:
@@ -78,63 +82,105 @@ class DiscJockey:
 
 	#============================================
 	def choose_next(self, last_song: audio_utils.Song) -> audio_utils.Song | None:
-		candidates = next_song_selector.build_candidate_songs(
-			last_song,
-			self.song_paths,
-			self.args.sample_size,
-		)
-		if not candidates:
-			print(f"{Colors.WARNING}No candidate songs available; retrying selection.{Colors.ENDC}")
+		last_candidates = []
+		for attempt in range(MAX_NEXT_SONG_ATTEMPTS):
+			candidates = next_song_selector.build_candidate_songs(
+				last_song,
+				self.song_paths,
+				self.args.sample_size,
+			)
+			if not candidates:
+				print(
+					f"{Colors.WARNING}No candidate songs available "
+					f"(attempt {attempt + 1}/{MAX_NEXT_SONG_ATTEMPTS}); retrying selection.{Colors.ENDC}"
+				)
+				time.sleep(1)
+				continue
+
+			last_candidates = candidates
+			self._print_candidate_pool(candidates)
+			first_result = next_song_selector.choose_next_song(
+				last_song,
+				self.song_paths,
+				self.args.sample_size,
+				self.model_name,
+				candidates=candidates,
+				show_candidates=False,
+			)
+			second_result = next_song_selector.choose_next_song(
+				last_song,
+				self.song_paths,
+				self.args.sample_size,
+				self.model_name,
+				candidates=candidates,
+				show_candidates=False,
+			)
+
+			first_song = first_result.song
+			second_song = second_result.song
+
+			if first_song and second_song:
+				if first_song.path == second_song.path:
+					print(f"{Colors.OKGREEN}Both selectors picked {os.path.basename(first_song.path)}; accepting unanimous choice.{Colors.ENDC}")
+					return first_song
+
+				best_result = self._run_referee(last_song, candidates, [("A", first_result), ("B", second_result)])
+				if best_result and best_result.song:
+					return best_result.song
+
+				print(
+					f"{Colors.WARNING}Referee could not pick a winner "
+					f"(attempt {attempt + 1}/{MAX_NEXT_SONG_ATTEMPTS}); retrying selection.{Colors.ENDC}"
+				)
+				time.sleep(1)
+				continue
+
+			if first_song or second_song:
+				chosen = first_song or second_song
+				source = "first" if first_song else "second"
+				print(f"{Colors.OKGREEN}Only {source} selector produced a song; using {os.path.basename(chosen.path)}.{Colors.ENDC}")
+				return chosen
+
+			print(
+				f"{Colors.WARNING}Neither selector produced a song "
+				f"(attempt {attempt + 1}/{MAX_NEXT_SONG_ATTEMPTS}); retrying selection.{Colors.ENDC}"
+			)
 			time.sleep(1)
-			return self.choose_next(last_song)
 
-		self._print_candidate_pool(candidates)
-		first_result = next_song_selector.choose_next_song(
-			last_song,
-			self.song_paths,
-			self.args.sample_size,
-			self.model_name,
-			candidates=candidates,
-			show_candidates=False,
-		)
-		second_result = next_song_selector.choose_next_song(
-			last_song,
-			self.song_paths,
-			self.args.sample_size,
-			self.model_name,
-			candidates=candidates,
-			show_candidates=False,
-		)
+		return self._fallback_next_song(last_song, last_candidates)
 
-		first_song = first_result.song
-		second_song = second_result.song
-
-		if first_song and second_song:
-			if first_song.path == second_song.path:
-				print(f"{Colors.OKGREEN}Both selectors picked {os.path.basename(first_song.path)}; accepting unanimous choice.{Colors.ENDC}")
-				return first_song
-
-			best_result = self._run_referee(last_song, candidates, [("A", first_result), ("B", second_result)])
-			if best_result and best_result.song:
-				return best_result.song
-
-			print(f"{Colors.WARNING}Referee could not pick a winner; re-running selection.{Colors.ENDC}")
-			time.sleep(1)
-			return self.choose_next(last_song)
-
-		if first_song or second_song:
-			chosen = first_song or second_song
-			source = "first" if first_song else "second"
-			print(f"{Colors.OKGREEN}Only {source} selector produced a song; using {os.path.basename(chosen.path)}.{Colors.ENDC}")
+	#============================================
+	def _fallback_next_song(
+		self,
+		last_song: audio_utils.Song,
+		candidates: list[audio_utils.Song],
+	) -> audio_utils.Song | None:
+		"""
+		Fallback selection to avoid infinite LLM retry loops.
+		"""
+		if candidates:
+			chosen = random.choice(candidates)
+			print(f"{Colors.WARNING}Falling back to random candidate: {os.path.basename(chosen.path)}{Colors.ENDC}")
 			return chosen
 
-		print(f"{Colors.WARNING}Neither selector produced a song; retrying selection.{Colors.ENDC}")
-		time.sleep(1)
-		return self.choose_next(last_song)
+		other_paths = [path for path in self.song_paths if path != last_song.path]
+		if not other_paths:
+			print(f"{Colors.FAIL}No fallback songs available; ending session.{Colors.ENDC}")
+			return None
+
+		chosen_path = random.choice(other_paths)
+		chosen = audio_utils.Song(chosen_path)
+		print(f"{Colors.WARNING}Falling back to random library pick: {os.path.basename(chosen.path)}{Colors.ENDC}")
+		return chosen
 
 	#============================================
 	def prepare_next_async(self, last_song: audio_utils.Song) -> None:
 		next_song = self.choose_next(last_song)
+		if not next_song:
+			print(f"{Colors.FAIL}No next song available after retries; ending session.{Colors.ENDC}")
+			self.next_song = None
+			self.queued_intro = ""
+			return
 		print(f"{Colors.OKBLUE}Preparing next song: {os.path.basename(next_song.path)}{Colors.ENDC}")
 		self.queued_intro = self._generate_intro(
 			next_song,

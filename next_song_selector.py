@@ -82,6 +82,15 @@ def _candidate_key_variants(value: str) -> set[str]:
 		root_norm = re.sub(r"\s+", " ", root.strip())
 		keys.update({root_norm, root_norm.lower()})
 
+	no_prefix = re.sub(r"^[\s\-_]*\d{1,4}[\s\-_\.]+", "", normalized).strip()
+	if no_prefix and no_prefix.lower() != normalized.lower():
+		keys.update(_candidate_key_variants(no_prefix))
+
+	if "-" in no_prefix:
+		title_part = no_prefix.split("-", 1)[1].strip()
+		if title_part:
+			keys.update(_candidate_key_variants(title_part))
+
 	compact = re.sub(r"[ _\-]+", "", normalized.lower())
 	if compact:
 		keys.add(compact)

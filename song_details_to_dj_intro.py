@@ -3,6 +3,7 @@
 # Standard Library
 import argparse
 import os
+import re
 
 # Local repo modules
 import audio_utils
@@ -14,8 +15,16 @@ class Colors:
 	OKBLUE = "\033[94m"
 	OKGREEN = "\033[92m"
 	OKCYAN = "\033[96m"
+	WARNING = "\033[93m"
 	FAIL = "\033[91m"
 	ENDC = "\033[0m"
+
+#============================================
+MAX_INTRO_CHARS = 1200
+MIN_INTRO_SENTENCES = 3
+MAX_INTRO_SENTENCES = 6
+MAX_REPEAT_SENTENCE = 2
+EXPECTED_FACT_LINES = 5
 
 #============================================
 def parse_args() -> argparse.Namespace:
@@ -34,6 +43,78 @@ def parse_args() -> argparse.Namespace:
 	return parser.parse_args()
 
 #============================================
+def _estimate_sentence_count(text: str) -> int:
+	"""
+	Estimate sentence count with a simple punctuation heuristic.
+	"""
+	parts = re.split(r"[.!?]+", text)
+	count = 0
+	for part in parts:
+		words = part.strip().split()
+		if len(words) >= 3:
+			count += 1
+	return count
+
+#============================================
+def _normalize_sentence(text: str) -> str:
+	"""
+	Normalize sentence text for repetition checks.
+	"""
+	normalized = text.lower()
+	normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+	normalized = re.sub(r"\s+", " ", normalized).strip()
+	return normalized
+
+#============================================
+def _has_excessive_repetition(text: str) -> bool:
+	"""
+	Detect repeated sentences that indicate a looping response.
+	"""
+	parts = re.split(r"[.!?]+", text)
+	counts = {}
+	for part in parts:
+		normalized = _normalize_sentence(part)
+		if not normalized:
+			continue
+		if len(normalized.split()) < 3:
+			continue
+		count = counts.get(normalized, 0) + 1
+		counts[normalized] = count
+		if count > MAX_REPEAT_SENTENCE:
+			return True
+	return False
+
+#============================================
+def _normalize_fact_line(text: str) -> str:
+	normalized = text.lower()
+	normalized = re.sub(r"^(fact|trivia)\s*:\s*", "", normalized)
+	normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+	normalized = re.sub(r"\s+", " ", normalized).strip()
+	return normalized
+
+#============================================
+def _validate_facts_block(text: str) -> tuple[bool, str]:
+	"""
+	Ensure <facts> contains exactly five unique FACT/TRIVIA lines.
+	"""
+	lines = [line.strip() for line in text.splitlines() if line.strip()]
+	if len(lines) != EXPECTED_FACT_LINES:
+		return (False, f"facts line count {len(lines)} != {EXPECTED_FACT_LINES}")
+
+	normalized_lines = []
+	for line in lines:
+		if not re.match(r"^(fact|trivia)\s*:", line, flags=re.IGNORECASE):
+			return (False, "facts lines must start with FACT: or TRIVIA:")
+		normalized = _normalize_fact_line(line)
+		if not normalized:
+			return (False, "empty fact line")
+		normalized_lines.append(normalized)
+
+	if len(set(normalized_lines)) != len(normalized_lines):
+		return (False, "duplicate FACT/TRIVIA lines")
+
+	return (True, "")
+
 #============================================
 def prepare_intro_text(
 	song: audio_utils.Song,
@@ -64,20 +145,63 @@ def prepare_intro_text(
 	)
 	if strict_reminder:
 		prompt += "\n(**) IMPORTANT VALIDATION RULES:\n"
-		prompt += "- The FACT/TRIVIA lines must be outside <response> tags.\n"
+		prompt += "- Put the FACT/TRIVIA lines inside <facts>...</facts>, outside <response>.\n"
 		prompt += "- The <response> must contain ONLY the final spoken intro.\n"
 		prompt += "- The <response> must be 3-5 sentences and at least 200 characters.\n"
 		prompt += "- Do not include the strings 'FACT:' or 'TRIVIA:' inside <response>.\n"
+		prompt += "- Output only <facts> and <response> tags, nothing else.\n"
 
 	print(f"{Colors.OKBLUE}Sending prompt to LLM...{Colors.ENDC}")
 	dj_intro = llm_wrapper.run_llm(prompt, model_name=model_name)
 
 	print(f"{Colors.OKGREEN}Received LLM output; extracting <response> block...{Colors.ENDC}")
 	# Use the generic XML extractor for the response tag
+	facts_block = llm_wrapper.extract_xml_tag(dj_intro, "facts")
+	if not facts_block:
+		print(f"{Colors.WARNING}No <facts> block detected; rejecting output.{Colors.ENDC}")
+		return ""
+	facts_ok, facts_reason = _validate_facts_block(facts_block)
+	if not facts_ok:
+		print(f"{Colors.WARNING}Invalid <facts> block ({facts_reason}); rejecting output.{Colors.ENDC}")
+		return ""
+
 	clean_intro = llm_wrapper.extract_xml_tag(dj_intro, "response")
 
 	if clean_intro:
-		print(f"Extracted intro length: {len(clean_intro)} characters.")
+		intro_length = len(clean_intro)
+		print(f"Extracted intro length: {intro_length} characters.")
+		if intro_length > MAX_INTRO_CHARS:
+			print(
+				f"{Colors.WARNING}Intro too long ({intro_length} chars); "
+				f"rejecting and retrying.{Colors.ENDC}"
+			)
+			return ""
+		lowered = clean_intro.lower()
+		if "fact:" in lowered or "trivia:" in lowered:
+			print(f"{Colors.WARNING}Intro contains FACT/TRIVIA lines; rejecting output.{Colors.ENDC}")
+			return ""
+		if "<" in clean_intro and ">" in clean_intro:
+			print(f"{Colors.WARNING}Intro contains markup; rejecting output.{Colors.ENDC}")
+			return ""
+		sentence_count = _estimate_sentence_count(clean_intro)
+		if sentence_count < MIN_INTRO_SENTENCES or sentence_count > MAX_INTRO_SENTENCES:
+			print(
+				f"{Colors.WARNING}Intro sentence count out of range ({sentence_count}); "
+				f"rejecting output.{Colors.ENDC}"
+			)
+			return ""
+		if _has_excessive_repetition(clean_intro):
+			print(f"{Colors.WARNING}Intro repeats sentences; rejecting output.{Colors.ENDC}")
+			return ""
+		intro_norm = _normalize_sentence(clean_intro)
+		title_norm = _normalize_sentence(song.title or "")
+		artist_norm = _normalize_sentence(song.artist or "")
+		if title_norm and title_norm not in intro_norm:
+			print(f"{Colors.WARNING}Intro missing song title; rejecting output.{Colors.ENDC}")
+			return ""
+		if song.artist and song.artist != "Unknown Artist" and artist_norm and artist_norm not in intro_norm:
+			print(f"{Colors.WARNING}Intro missing artist name; rejecting output.{Colors.ENDC}")
+			return ""
 	else:
 		print("No <response> block detected; intro text will be empty.")
 
@@ -132,7 +256,8 @@ def build_prompt(
 		"how or why the song was written, stories from recording, changes in the band's sound, "
 		"lyrical themes, tensions or milestones for the band, or how it fits into the album. "
 		"Only use chart positions or awards if there is no stronger story available. "
-		"\n(**) After those five FACT/TRIVIA lines, write the final spoken intro. "
+		"Wrap those five lines inside <facts>...</facts> tags. "
+		"\n(**) After the <facts> block, write the final spoken intro. "
 		"In the intro, weave in at least two of the facts you listed. "
 		"Make it sound like you are telling a brief story about the band around this track, "
 		"not reading a press release. "
@@ -144,7 +269,8 @@ def build_prompt(
 		"The <response> block must contain ONLY the final intro text. "
 		"Do NOT include any 'FACT:' or 'TRIVIA:' lines inside <response>. "
 		"The <response> must be at least 200 characters. "
-		"Wrap the final spoken intro inside <response>...</response>."
+		"Wrap the final spoken intro inside <response>...</response>. "
+		"Output only the <facts> and <response> tags, and nothing else."
 	)
 
 	prompt = base

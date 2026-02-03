@@ -19,12 +19,13 @@ except ImportError:
 from gtts import gTTS
 
 DEFAULT_ENGINE = "say"
+TTS_VOLUME_GAIN = 1.15
 
 #============================================
 def format_intro_for_tts(text: str) -> str:
 	"""
 	Normalize DJ intro text for TTS playback by splitting long sentences
-	and adding newlines after periods and commas.
+	and adding newlines after periods and commas when it will not split short lists.
 
 	Args:
 		text (str): Raw DJ intro text.
@@ -35,8 +36,13 @@ def format_intro_for_tts(text: str) -> str:
 	if not text:
 		return ""
 
+	trimmed = _strip_fact_trivia_lines(text)
+	trimmed = _strip_boilerplate_intro(trimmed)
+	if not trimmed:
+		return ""
+
 	# Normalize some punctuation and ellipsis variants
-	normalized = text.replace("\u2014", ". ")
+	normalized = trimmed.replace("\u2014", ". ")
 	normalized = normalized.replace("...", ".")
 	normalized = normalized.replace("..", ".")
 
@@ -62,11 +68,84 @@ def format_intro_for_tts(text: str) -> str:
 	if not result.endswith("."):
 		result += "."
 
-	# Add newlines after commas and periods to help TTS pacing
-	result = result.replace(", ", ", \n")
+	# Add newlines after commas when it is not a short list.
+	result = _insert_pacing_linebreaks(result)
 	result = result.replace(". ", ". \n")
 
 	return result
+
+#============================================
+def _strip_fact_trivia_lines(text: str) -> str:
+	"""
+	Remove FACT/TRIVIA lines so they are not spoken.
+	"""
+	if not text:
+		return ""
+	lines = []
+	for line in text.splitlines():
+		strip_line = line.strip()
+		if re.match(r"^(fact|trivia)\s*:", strip_line, flags=re.IGNORECASE):
+			continue
+		lines.append(line)
+	return "\n".join(lines).strip()
+
+#============================================
+def _strip_boilerplate_intro(text: str) -> str:
+	"""
+	Remove the repetitive "Ladies and gentlemen, welcome to the show" opener.
+	"""
+	if not text:
+		return ""
+	pattern = r"^\s*ladies and gentlemen,\s*welcome to the show[.!?]\s*"
+	return re.sub(pattern, "", text, flags=re.IGNORECASE).lstrip()
+
+#============================================
+def _insert_pacing_linebreaks(text: str) -> str:
+	"""
+	Insert line breaks after commas when they are not part of short item lists.
+	"""
+	if not text:
+		return ""
+
+	result_chars = []
+	index = 0
+	while index < len(text):
+		char = text[index]
+		if char == "," and index + 1 < len(text) and text[index + 1] == " ":
+			tail = _slice_to_sentence_end(text[index + 1:])
+			if _comma_is_list_like(tail):
+				result_chars.append(", ")
+			else:
+				result_chars.append(", \n")
+			index += 2
+			continue
+		result_chars.append(char)
+		index += 1
+	return "".join(result_chars)
+
+#============================================
+def _slice_to_sentence_end(text: str) -> str:
+	"""
+	Return text up to the next sentence-ending punctuation mark.
+	"""
+	match = re.search(r"[.!?]", text)
+	if match:
+		return text[:match.start()]
+	return text
+
+#============================================
+def _comma_is_list_like(tail: str) -> bool:
+	"""
+	Heuristic for short lists like "apples, bananas, and pears".
+	"""
+	lookahead = tail[:40]
+	if re.match(r"\s*(and|or)\s+\w+", lookahead):
+		return True
+	if "," in lookahead:
+		return True
+	if re.search(r"\b(and|or)\b", lookahead):
+		return True
+	return False
 
 #============================================
 def _ensure_mixer_initialized() -> None:
@@ -105,7 +184,7 @@ def process_audio_with_sox(input_file: str, speed: float) -> str:
     output_file = "temp_processed.wav"
     command = (
         f"sox \"{input_file}\" \"{output_file}\" "
-        f"tempo {speed} silence 1 0.1 1% -1 0.9 1%"
+        f"tempo {speed} vol {TTS_VOLUME_GAIN} silence 1 0.1 1% -1 0.9 1%"
     )
     print(f"[sox] {command}")
     os.system(command)
