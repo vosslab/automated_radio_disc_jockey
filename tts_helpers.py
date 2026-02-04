@@ -26,7 +26,7 @@ except ImportError:
 from cli_colors import Colors
 
 DEFAULT_ENGINE = "say"
-TTS_VOLUME_GAIN = 1.15
+TTS_VOLUME_GAIN = 0.99
 
 #============================================
 def format_intro_for_tts(text: str) -> str:
@@ -195,11 +195,13 @@ def text_to_speech_gtts(text: str) -> str:
 	return raw_mp3
 
 #============================================
-def process_audio_with_sox(input_file: str, speed: float) -> str:
-	output_file = "temp_processed.wav"
+def process_audio_with_sox(input_file: str, speed: float, output_file: str | None = None) -> str:
+	output_file = output_file or "temp_processed.wav"
 	command = (
 		f"sox \"{input_file}\" \"{output_file}\" "
-		f"tempo {speed} vol {TTS_VOLUME_GAIN} silence 1 0.1 1% -1 0.9 1%"
+		f"tempo {speed} "
+		"compand 0.3,1 6:-70,-60,-20 -5 -90 0.2 "
+		"norm -3 silence 1 0.1 1% -1 0.9 1%"
 	)
 	print(f"[sox] {command}")
 	os.system(command)
@@ -221,7 +223,20 @@ def speak_text(text: str, engine: str, save: bool, speed: float):
 	print(f"[tts] Converting '{raw_wav}' via sox at {speed}x...")
 	final_audio = process_audio_with_sox(raw_wav, speed)
 	print(f"[tts] Playback source: {final_audio}")
-	pygame.mixer.music.load(final_audio)
+	_play_audio_file(final_audio, text)
+	if save:
+		output_file = "output.wav"
+		os.rename(final_audio, output_file)
+		print(f"Saved audio to {output_file}")
+	else:
+		if os.path.exists(final_audio):
+			os.remove(final_audio)
+
+#============================================
+def _play_audio_file(audio_path: str, text: str) -> None:
+	if not audio_path or not os.path.exists(audio_path):
+		raise FileNotFoundError(f"Audio file not found: {audio_path}")
+	pygame.mixer.music.load(audio_path)
 	pygame.mixer.music.play()
 	max_duration = len(text.split()) * 0.5 * 2
 	timeout = time.time() + max_duration
@@ -231,13 +246,52 @@ def speak_text(text: str, engine: str, save: bool, speed: float):
 			pygame.mixer.music.stop()
 			break
 		time.sleep(0.5)
-	if save:
-		output_file = "output.wav"
-		os.rename(final_audio, output_file)
-		print(f"Saved audio to {output_file}")
+
+#============================================
+def render_dj_intro_audio(prompt: str, speed: float, engine: str | None, output_path: str) -> str | None:
+	if not prompt or len(prompt.strip()) < 1:
+		return None
+	engine_name = engine or DEFAULT_ENGINE
+	clean_prompt = format_intro_for_tts(prompt)
+	clean_prompt = re.sub(r"^[^A-Za-z0-9]+", "", clean_prompt.strip())
+	clean_prompt = re.sub(r"[^A-Za-z0-9]+$", "", clean_prompt).strip()
+	if not clean_prompt:
+		return None
+
+	if engine_name == "pyttsx3":
+		if pyttsx3 is None:
+			raise RuntimeError("pyttsx3 is not installed.")
+		raw_wav = text_to_speech_pyttsx3(clean_prompt, speed=speed)
+	elif engine_name == "say":
+		raw_wav = text_to_speech_say(clean_prompt, speed=speed)
 	else:
-		if os.path.exists(final_audio):
-			os.remove(final_audio)
+		raw_wav = text_to_speech_gtts(clean_prompt)
+
+	output_dir = os.path.dirname(output_path)
+	if output_dir:
+		os.makedirs(output_dir, exist_ok=True)
+
+	print(f"[tts] Pre-rendering intro audio via sox at {speed}x...")
+	final_audio = process_audio_with_sox(raw_wav, speed, output_file=output_path)
+	return final_audio if os.path.exists(final_audio) else None
+
+#============================================
+def play_rendered_intro(audio_path: str, prompt: str) -> None:
+	if not audio_path:
+		print("No cached intro audio to play; skipping.")
+		return
+	if not os.path.exists(audio_path):
+		print(f"Cached intro audio not found: {audio_path}")
+		return
+	_ensure_mixer_initialized()
+	print(f"[tts] Playing cached intro: {os.path.basename(audio_path)}")
+	try:
+		_play_audio_file(audio_path, prompt)
+	except Exception as error:
+		print(f"TTS playback error: {error}")
+		return
+	if os.path.exists(audio_path):
+		os.remove(audio_path)
 
 #============================================
 def speak_dj_intro(prompt: str, speed: float, engine: str | None = None) -> None:

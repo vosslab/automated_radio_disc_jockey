@@ -55,18 +55,6 @@ def clean_llm_choice(choice_text: str | None) -> str:
 	return text.strip()
 
 #============================================
-def _estimate_sentence_count(text: str) -> int:
-	"""
-	Estimate sentence count with a simple punctuation heuristic.
-	"""
-	parts = re.split(r"[.!?]+", text or "")
-	count = 0
-	for part in parts:
-		words = part.strip().split()
-		if len(words) >= 3:
-			count += 1
-	return count
-
 #============================================
 def _reason_has_score_shorthand(reason: str) -> bool:
 	"""
@@ -99,9 +87,6 @@ def is_reason_acceptable(reason: str, candidates: list[Song]) -> bool:
 		return False
 
 	if _reason_has_score_shorthand(stripped):
-		return False
-
-	if _estimate_sentence_count(stripped) < 3:
 		return False
 
 	letters = re.sub(r"[^A-Za-z]", "", stripped)

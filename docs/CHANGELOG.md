@@ -1,6 +1,12 @@
 # Changelog
 
 ## 2026-02-04
+- Drop the explicit TTS volume gain stage now that compand + norm handle levels.
+- Replace the post-compand gain cut with SoX norm -1 for peak normalization.
+- Add a small post-compand gain cut to prevent clipping after dynamic range compression.
+- Add a mild SoX compand stage after tempo for gentler dynamic range control.
+- Drop the strict sentence-count requirement for next-song reasons to reduce false rejections.
+- Pre-render queued DJ intro audio during playback so it is ready when the track ends.
 - Show a short preview of rejected next-song reasons before retrying the LLM.
 - Add whisper-cli --suppress-nst to drop non-speech tokens like [MUSIC] in transcripts.
 - Strip stray <intro text> tags from the cleanup LLM output to avoid false intro rejections.

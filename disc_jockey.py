@@ -66,6 +66,7 @@ class DiscJockey:
 		self.current_song = audio_utils.Song(first_path)
 		self.next_song: audio_utils.Song | None = None
 		self.queued_intro: str | None = None
+		self.queued_intro_audio: str | None = None
 		self.previous_song: audio_utils.Song | None = None
 		self.history = HistoryLogger()
 		self.model_name = llm_wrapper.get_default_model_name()
@@ -179,6 +180,7 @@ class DiscJockey:
 			print(f"{Colors.FAIL}No next song available after retries; ending session.{Colors.ENDC}")
 			self.next_song = None
 			self.queued_intro = None
+			self.queued_intro_audio = None
 			return
 		file_name = escape(os.path.basename(next_song.path))
 		print(f"{Colors.OKBLUE}Preparing next song: {file_name}{Colors.ENDC}")
@@ -187,16 +189,31 @@ class DiscJockey:
 			prev_song=last_song,
 			use_referee=True,
 		)
+		self.queued_intro_audio = None
+		if self.queued_intro:
+			print(f"{Colors.OKBLUE}Pre-rendering intro audio for next track...{Colors.ENDC}")
+			self.queued_intro_audio = tts_helpers.render_dj_intro_audio(
+				self.queued_intro,
+				self.args.tts_speed,
+				engine=self.args.tts_engine,
+				output_path=os.path.join("output", "queued_intro.wav"),
+			)
+			if self.queued_intro_audio:
+				print(f"{Colors.OKGREEN}Queued intro audio ready.{Colors.ENDC}")
+			else:
+				print(f"{Colors.WARNING}Queued intro audio generation failed; will render on demand.{Colors.ENDC}")
 		self.next_song = next_song
 
 	#============================================
 	def prepare_and_speak_intro(self, song: audio_utils.Song, use_queue: bool) -> None:
 		max_attempts = 2
 		intro_text: str | None = None
+		use_cached_audio = False
 		for attempt in range(max_attempts):
 			using_queue = attempt == 0 and use_queue and self.queued_intro
 			if using_queue:
 				intro_text = self.queued_intro
+				use_cached_audio = bool(self.queued_intro_audio)
 				self.queued_intro = None
 				print(f"{Colors.OKCYAN}Using queued intro for current track.{Colors.ENDC}")
 			else:
@@ -207,6 +224,7 @@ class DiscJockey:
 					prev_song=self.previous_song,
 					use_referee=False,
 				)
+				use_cached_audio = False
 
 			if intro_text and len(intro_text.strip()) > 5:
 				print(f"{Colors.OKGREEN}Intro text ready (len={len(intro_text.strip())}).{Colors.ENDC}")
@@ -242,10 +260,14 @@ class DiscJockey:
 				)
 			)
 			try:
-				tts_helpers.speak_dj_intro(intro_text, self.args.tts_speed, engine=self.args.tts_engine)
+				if use_cached_audio and self.queued_intro_audio:
+					tts_helpers.play_rendered_intro(self.queued_intro_audio, intro_text)
+				else:
+					tts_helpers.speak_dj_intro(intro_text, self.args.tts_speed, engine=self.args.tts_engine)
 			except Exception as error:
 				print(f"{Colors.FAIL}TTS playback failed: {escape(str(error))}{Colors.ENDC}")
 			self.log_intro(song, intro_text)
+			self.queued_intro_audio = None
 		else:
 			print(f"{Colors.FAIL}No usable intro text after retries; skipping TTS.{Colors.ENDC}")
 
@@ -261,6 +283,19 @@ class DiscJockey:
 			prev_song=self.current_song,
 			use_referee=True,
 		)
+		self.queued_intro_audio = None
+		if self.queued_intro:
+			print(f"{Colors.OKBLUE}Pre-rendering intro audio for next track...{Colors.ENDC}")
+			self.queued_intro_audio = tts_helpers.render_dj_intro_audio(
+				self.queued_intro,
+				self.args.tts_speed,
+				engine=self.args.tts_engine,
+				output_path=os.path.join("output", "queued_intro.wav"),
+			)
+			if self.queued_intro_audio:
+				print(f"{Colors.OKGREEN}Queued intro audio ready.{Colors.ENDC}")
+			else:
+				print(f"{Colors.WARNING}Queued intro audio generation failed; will render on demand.{Colors.ENDC}")
 
 	#============================================
 	def run(self) -> None:
@@ -275,6 +310,7 @@ class DiscJockey:
 			# Prepare next song and intro concurrently while current is playing
 			self.next_song = None
 			self.queued_intro = None
+			self.queued_intro_audio = None
 			next_thread = threading.Thread(target=self.prepare_next_async, args=(self.current_song,))
 			next_thread.start()
 
@@ -287,6 +323,8 @@ class DiscJockey:
 
 			if self.queued_intro and len(self.queued_intro.strip()) > 5:
 				print(f"{Colors.OKGREEN}Queued intro ready for next track.{Colors.ENDC}")
+				if self.queued_intro_audio:
+					print(f"{Colors.OKGREEN}Queued intro audio ready for next track.{Colors.ENDC}")
 			else:
 				print(f"{Colors.WARNING}Next intro missing or too short; will skip TTS for next track.{Colors.ENDC}")
 
