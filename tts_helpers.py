@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 # Standard Library
 import argparse
 import os
@@ -96,7 +94,7 @@ def _strip_boilerplate_intro(text: str) -> str:
 	"""
 	if not text:
 		return ""
-	pattern = r"^\s*ladies and gentlemen,\s*welcome to the show[.!?]\s*"
+	pattern = r"^\s*ladies and gentlemen,?\s*welcome to[^.!?]*[.!?]\s*"
 	return re.sub(pattern, "", text, flags=re.IGNORECASE).lstrip()
 
 #============================================
@@ -181,16 +179,16 @@ def text_to_speech_gtts(text: str) -> str:
 
 #============================================
 def process_audio_with_sox(input_file: str, speed: float) -> str:
-    output_file = "temp_processed.wav"
-    command = (
-        f"sox \"{input_file}\" \"{output_file}\" "
-        f"tempo {speed} vol {TTS_VOLUME_GAIN} silence 1 0.1 1% -1 0.9 1%"
-    )
-    print(f"[sox] {command}")
-    os.system(command)
-    if os.path.exists(input_file):
-        os.remove(input_file)
-    return output_file
+	output_file = "temp_processed.wav"
+	command = (
+		f"sox \"{input_file}\" \"{output_file}\" "
+		f"tempo {speed} vol {TTS_VOLUME_GAIN} silence 1 0.1 1% -1 0.9 1%"
+	)
+	print(f"[sox] {command}")
+	os.system(command)
+	if os.path.exists(input_file):
+		os.remove(input_file)
+	return output_file
 
 #============================================
 def speak_text(text: str, engine: str, save: bool, speed: float):

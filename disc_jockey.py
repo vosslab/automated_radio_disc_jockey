@@ -70,7 +70,7 @@ class DiscJockey:
 		first_path = audio_utils.select_song(self.song_paths, args.sample_size)
 		self.current_song = audio_utils.Song(first_path)
 		self.next_song: audio_utils.Song | None = None
-		self.queued_intro = ""
+		self.queued_intro: str | None = None
 		self.previous_song: audio_utils.Song | None = None
 		self.history = HistoryLogger()
 		self.model_name = llm_wrapper.get_default_model_name()
@@ -179,7 +179,7 @@ class DiscJockey:
 		if not next_song:
 			print(f"{Colors.FAIL}No next song available after retries; ending session.{Colors.ENDC}")
 			self.next_song = None
-			self.queued_intro = ""
+			self.queued_intro = None
 			return
 		print(f"{Colors.OKBLUE}Preparing next song: {os.path.basename(next_song.path)}{Colors.ENDC}")
 		self.queued_intro = self._generate_intro(
@@ -192,12 +192,12 @@ class DiscJockey:
 	#============================================
 	def prepare_and_speak_intro(self, song: audio_utils.Song, use_queue: bool) -> None:
 		max_attempts = 2
-		intro_text = ""
+		intro_text: str | None = None
 		for attempt in range(max_attempts):
 			using_queue = attempt == 0 and use_queue and self.queued_intro
 			if using_queue:
 				intro_text = self.queued_intro
-				self.queued_intro = ""
+				self.queued_intro = None
 				print(f"{Colors.OKCYAN}Using queued intro for current track.{Colors.ENDC}")
 			else:
 				if attempt > 0:
@@ -212,12 +212,15 @@ class DiscJockey:
 				print(f"{Colors.OKGREEN}Intro text ready (len={len(intro_text.strip())}).{Colors.ENDC}")
 				break
 			else:
-				print(
-					f"{Colors.WARNING}Intro text candidate too short "
-					f"(len={len(intro_text.strip()) if intro_text else 0}); retrying...{Colors.ENDC}"
-				)
+				if intro_text is None:
+					print(f"{Colors.WARNING}Intro generation rejected by validation; retrying...{Colors.ENDC}")
+				else:
+					print(
+						f"{Colors.WARNING}Intro text candidate too short "
+						f"(len={len(intro_text.strip()) if intro_text else 0}); retrying...{Colors.ENDC}"
+					)
 
-			intro_text = ""
+			intro_text = None
 			if using_queue:
 				print(f"{Colors.WARNING}Queued intro was invalid; requesting a fresh one.{Colors.ENDC}")
 			else:
@@ -257,7 +260,7 @@ class DiscJockey:
 
 			# Prepare next song and intro concurrently while current is playing
 			self.next_song = None
-			self.queued_intro = ""
+			self.queued_intro = None
 			next_thread = threading.Thread(target=self.prepare_next_async, args=(self.current_song,))
 			next_thread.start()
 
@@ -279,27 +282,22 @@ class DiscJockey:
 			self.next_song = None
 
 	#============================================
-	def _generate_intro(self, song: audio_utils.Song, prev_song: audio_utils.Song | None, use_referee: bool) -> str:
+	def _generate_intro(self, song: audio_utils.Song, prev_song: audio_utils.Song | None, use_referee: bool) -> str | None:
 		if use_referee:
 			return self._generate_intro_with_referee(song, prev_song)
 		return song_details_to_dj_intro.prepare_intro_text(
 			song,
 			prev_song=prev_song,
 			model_name=self.model_name,
-		) or ""
+		)
 
 	#============================================
-	def _generate_intro_with_referee(self, song: audio_utils.Song, prev_song: audio_utils.Song | None) -> str:
+	def _generate_intro_with_referee(self, song: audio_utils.Song, prev_song: audio_utils.Song | None) -> str | None:
 		try:
 			details_text = song_details_to_dj_intro.fetch_song_details(song)
 		except Exception as error:
 			print(f"{Colors.WARNING}Failed to fetch song details for intro referee: {error}{Colors.ENDC}")
-			return ""
-
-		def _normalize_match_text(value: str) -> str:
-			text = value.lower()
-			text = re.sub(r"[^a-z0-9]+", "", text)
-			return text
+			return None
 
 		def _estimate_sentence_count(text: str) -> int:
 			parts = re.split(r"[.!?]+", text)
@@ -310,7 +308,7 @@ class DiscJockey:
 					sentences += 1
 			return sentences
 
-		def _is_intro_usable(intro: str) -> tuple[bool, str]:
+		def _is_intro_usable(intro: str, relaxed: bool = False) -> tuple[bool, str]:
 			if not intro:
 				return (False, "empty intro")
 			text = intro.strip()
@@ -319,29 +317,29 @@ class DiscJockey:
 				return (False, "contains XML tags")
 			if "fact:" in lowered or "trivia:" in lowered:
 				return (False, "contains FACT/TRIVIA lines")
-			if len(text) < 200:
-				return (False, "too short (<200 chars)")
-			if len(text.split()) < 35:
-				return (False, "too short (<35 words)")
 			sentence_count = _estimate_sentence_count(text)
-			if sentence_count < 3:
-				return (False, "not enough sentences (<3)")
-
-			intro_norm = _normalize_match_text(text)
-			title_norm = _normalize_match_text(song.title or "")
-			artist_norm = _normalize_match_text(song.artist or "")
-			if title_norm and title_norm not in intro_norm:
-				return (False, "missing song title mention")
-			if song.artist and song.artist != "Unknown Artist" and artist_norm and artist_norm not in intro_norm:
-				return (False, "missing artist mention")
+			if relaxed:
+				if len(text.split()) < 12:
+					return (False, "too short (<12 words)")
+				if sentence_count < 2:
+					return (False, "not enough sentences (<2)")
+			else:
+				if len(text) < 200:
+					return (False, "too short (<200 chars)")
+				if len(text.split()) < 35:
+					return (False, "too short (<35 words)")
+				if sentence_count < 3:
+					return (False, "not enough sentences (<3)")
 
 			return (True, "")
 
 		candidates: list[tuple[str, str]] = []
+		relaxed_candidates: list[tuple[str, str]] = []
 		for label in ("A", "B"):
 			print(f"{Colors.OKBLUE}Generating DJ intro option {label}...{Colors.ENDC}")
 			max_intro_attempts = 2
 			intro = ""
+			accepted_relaxed = False
 			for attempt in range(max_intro_attempts):
 				intro = song_details_to_dj_intro.prepare_intro_text(
 					song,
@@ -349,23 +347,44 @@ class DiscJockey:
 					model_name=self.model_name,
 					details_text=details_text,
 					strict_reminder=(attempt > 0),
-				) or ""
+				)
+				if not intro:
+					print(f"{Colors.WARNING}Intro option {label} attempt {attempt + 1} rejected: empty intro{Colors.ENDC}")
+					intro = ""
+					continue
 				intro = intro.strip()
-				ok, reason = _is_intro_usable(intro)
+				ok, reason = _is_intro_usable(intro, relaxed=False)
 				if ok:
+					accepted_relaxed = False
+					break
+				ok_relaxed, _ = _is_intro_usable(intro, relaxed=True)
+				if ok_relaxed:
+					accepted_relaxed = True
+					print(
+						f"{Colors.WARNING}Intro option {label} attempt {attempt + 1} "
+						f"accepted with relaxed validation: {reason}{Colors.ENDC}"
+					)
 					break
 				print(f"{Colors.WARNING}Intro option {label} attempt {attempt + 1} rejected: {reason}{Colors.ENDC}")
 				intro = ""
 
 			if intro:
 				print(f"{Colors.OKMAGENTA}Intro Option {label}:{Colors.ENDC}\n{intro}\n{'-'*60}")
-				candidates.append((label, intro))
+				if accepted_relaxed:
+					relaxed_candidates.append((label, intro))
+				else:
+					candidates.append((label, intro))
 			else:
 				print(f"{Colors.WARNING}Intro option {label} failed validation; skipping it.{Colors.ENDC}")
 
+		if not candidates and relaxed_candidates:
+			best_relaxed = max(relaxed_candidates, key=lambda item: len(item[1]))
+			print(f"{Colors.WARNING}Using relaxed intro fallback; strict validation produced no candidates.{Colors.ENDC}")
+			return best_relaxed[1]
+
 		if not candidates:
 			print(f"{Colors.FAIL}All DJ intro attempts failed; no intro will be queued.{Colors.ENDC}")
-			return ""
+			return None
 
 		if len(candidates) == 1:
 			print(f"{Colors.WARNING}Only option {candidates[0][0]} produced text; using it by default.{Colors.ENDC}")
@@ -391,7 +410,8 @@ class DiscJockey:
 		prompt += "Pick the intro that sounds natural, uses concrete facts from the song details, "
 		prompt += "and creates a smooth handoff from the previous track.\n"
 		prompt += "\nDisqualifying rules: if an option includes 'FACT:' or 'TRIVIA:' in the intro text, "
-		prompt += "is fewer than 3 sentences, or fails to mention the artist and song title, it must lose.\n"
+		prompt += "or is fewer than 3 sentences, it must lose.\n"
+		prompt += "Prefer options that mention the song title when it fits naturally.\n"
 		prompt += "Do not prefer an option just because it is shorter.\n"
 		prompt += "(***) Current song summary:\n"
 		prompt += song.one_line_info() + "\n"

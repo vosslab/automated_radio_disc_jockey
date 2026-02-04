@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-02-04
+- Stop rejecting DJ intros that omit the artist name while still requiring the song title.
+- Allow DJ intros up to 10 sentences instead of 6.
+- Add relaxed intro fallback so TTS can proceed when strict validation rejects all options.
+- Tell the LLM to aim for 5-7 sentences when the limit is 10.
+- Return None on intro validation failures so retry logic can distinguish intentional rejects.
+- Relax song title validation to avoid rejecting intros with different title formatting.
+- Fix mixed tab/space indentation in `tts_helpers.py`.
+- Add unit tests for `audio_utils`, `llm_wrapper`, `song_details_to_dj_intro`, and `tts_helpers`.
+- Broaden DJ intro boilerplate stripping to drop "Ladies and gentlemen, welcome to ..." variants.
+- Add a boilerplate stripping test for the "another fantastic hour of music magic" variant.
+- Refresh `README.md` and add `docs/INSTALL.md` and `docs/USAGE.md`.
+- Add repo-root import setup to `tests/conftest.py` so tests run without PYTHONPATH.
+- Tell the LLM to avoid generic welcome openings and tie the first sentence to song details.
+- Add boilerplate stripping tests for "another enchanting journey" variants.
+
 ## 2026-02-03
 - Replace the wikipedia package with direct API calls and remove the BeautifulSoup dependency.
 - Scan music folders recursively so nested audio files are discovered.
