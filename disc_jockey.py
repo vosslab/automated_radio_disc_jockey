@@ -10,28 +10,20 @@ import random
 
 # PIP3 modules
 from rich.console import Console
+from rich import print
+from rich.markup import escape
+from rich.panel import Panel
+from rich import box
 
 # Local repo modules
+from cli_colors import Colors
 import audio_utils
 import llm_wrapper
 import next_song_selector
 import song_details_to_dj_intro
 import playback_helpers
 import tts_helpers
-
-#============================================
-# Simple ANSI color helpers
-class Colors:
-	HEADER = "\033[95m"
-	OKBLUE = "\033[94m"
-	OKCYAN = "\033[96m"
-	OKGREEN = "\033[92m"
-	OKMAGENTA = "\033[95m"
-	WARNING = "\033[93m"
-	FAIL = "\033[91m"
-	ENDC = "\033[0m"
-	BOLD = "\033[1m"
-	UNDERLINE = "\033[4m"
+import transcribe_audio
 
 #============================================
 MAX_NEXT_SONG_ATTEMPTS = 5
@@ -123,7 +115,8 @@ class DiscJockey:
 
 			if first_song and second_song:
 				if first_song.path == second_song.path:
-					print(f"{Colors.OKGREEN}Both selectors picked {os.path.basename(first_song.path)}; accepting unanimous choice.{Colors.ENDC}")
+					file_name = escape(os.path.basename(first_song.path))
+					print(f"{Colors.OKGREEN}Both selectors picked {file_name}; accepting unanimous choice.{Colors.ENDC}")
 					return first_song
 
 				best_result = self._run_referee(last_song, candidates, [("A", first_result), ("B", second_result)])
@@ -140,7 +133,8 @@ class DiscJockey:
 			if first_song or second_song:
 				chosen = first_song or second_song
 				source = "first" if first_song else "second"
-				print(f"{Colors.OKGREEN}Only {source} selector produced a song; using {os.path.basename(chosen.path)}.{Colors.ENDC}")
+				file_name = escape(os.path.basename(chosen.path))
+				print(f"{Colors.OKGREEN}Only {source} selector produced a song; using {file_name}.{Colors.ENDC}")
 				return chosen
 
 			print(
@@ -162,7 +156,8 @@ class DiscJockey:
 		"""
 		if candidates:
 			chosen = random.choice(candidates)
-			print(f"{Colors.WARNING}Falling back to random candidate: {os.path.basename(chosen.path)}{Colors.ENDC}")
+			file_name = escape(os.path.basename(chosen.path))
+			print(f"{Colors.WARNING}Falling back to random candidate: {file_name}{Colors.ENDC}")
 			return chosen
 
 		other_paths = [path for path in self.song_paths if path != last_song.path]
@@ -172,7 +167,8 @@ class DiscJockey:
 
 		chosen_path = random.choice(other_paths)
 		chosen = audio_utils.Song(chosen_path)
-		print(f"{Colors.WARNING}Falling back to random library pick: {os.path.basename(chosen.path)}{Colors.ENDC}")
+		file_name = escape(os.path.basename(chosen.path))
+		print(f"{Colors.WARNING}Falling back to random library pick: {file_name}{Colors.ENDC}")
 		return chosen
 
 	#============================================
@@ -183,7 +179,8 @@ class DiscJockey:
 			self.next_song = None
 			self.queued_intro = None
 			return
-		print(f"{Colors.OKBLUE}Preparing next song: {os.path.basename(next_song.path)}{Colors.ENDC}")
+		file_name = escape(os.path.basename(next_song.path))
+		print(f"{Colors.OKBLUE}Preparing next song: {file_name}{Colors.ENDC}")
 		self.queued_intro = self._generate_intro(
 			next_song,
 			prev_song=last_song,
@@ -229,17 +226,24 @@ class DiscJockey:
 				print(f"{Colors.WARNING}Intro generation failed; will retry if attempts remain.{Colors.ENDC}")
 
 		if intro_text:
-			border = "=" * 14
 			display_text = tts_helpers.format_intro_for_tts(intro_text) or intro_text
-			RICH_CONSOLE.print("DJ Introduction:", style="bold magenta")
-			RICH_CONSOLE.print(border, style="magenta")
+			body_lines = []
 			for line in display_text.splitlines() or [""]:
-				RICH_CONSOLE.print(f"   {line}", style="cyan")
-			RICH_CONSOLE.print(border, style="magenta")
+				body_lines.append(f"   {escape(line)}")
+			panel_text = "\n".join(body_lines)
+			RICH_CONSOLE.print(
+				Panel(
+					panel_text,
+					title="DJ Introduction",
+					title_align="left",
+					border_style="magenta",
+					box=box.DOUBLE,
+				)
+			)
 			try:
 				tts_helpers.speak_dj_intro(intro_text, self.args.tts_speed, engine=self.args.tts_engine)
 			except Exception as error:
-				print(f"{Colors.FAIL}TTS playback failed: {error}{Colors.ENDC}")
+				print(f"{Colors.FAIL}TTS playback failed: {escape(str(error))}{Colors.ENDC}")
 			self.log_intro(song, intro_text)
 		else:
 			print(f"{Colors.FAIL}No usable intro text after retries; skipping TTS.{Colors.ENDC}")
@@ -249,7 +253,8 @@ class DiscJockey:
 		if not next_song:
 			print(f"{Colors.WARNING}No next song available to prepare.{Colors.ENDC}")
 			return
-		print(f"{Colors.OKBLUE}Preparing next song: {os.path.basename(next_song.path)}{Colors.ENDC}")
+		file_name = escape(os.path.basename(next_song.path))
+		print(f"{Colors.OKBLUE}Preparing next song: {file_name}{Colors.ENDC}")
 		self.queued_intro = self._generate_intro(
 			next_song,
 			prev_song=self.current_song,
@@ -259,7 +264,8 @@ class DiscJockey:
 	#============================================
 	def run(self) -> None:
 		print(f"{Colors.WARNING}Found {len(self.song_paths)} audio files in {self.args.directory}.{Colors.ENDC}")
-		print(f"{Colors.OKGREEN}Starting with user-selected song: {os.path.basename(self.current_song.path)}{Colors.ENDC}")
+		start_name = escape(os.path.basename(self.current_song.path))
+		print(f"{Colors.OKGREEN}Starting with user-selected song: {start_name}{Colors.ENDC}")
 
 		while True:
 			self.prepare_and_speak_intro(self.current_song, use_queue=True)
@@ -303,8 +309,13 @@ class DiscJockey:
 		try:
 			details_text = song_details_to_dj_intro.fetch_song_details(song)
 		except Exception as error:
-			print(f"{Colors.WARNING}Failed to fetch song details for intro referee: {error}{Colors.ENDC}")
+			print(f"{Colors.WARNING}Failed to fetch song details for intro referee: {escape(str(error))}{Colors.ENDC}")
 			return None
+
+		lyrics_text = None
+		file_name = escape(os.path.basename(song.path))
+		print(f"{Colors.OKBLUE}Transcribing lyrics for {file_name}...{Colors.ENDC}")
+		lyrics_text = transcribe_audio.transcribe_audio(song.path)
 
 		def _estimate_sentence_count(text: str) -> int:
 			parts = re.split(r"[.!?]+", text)
@@ -354,6 +365,7 @@ class DiscJockey:
 					model_name=self.model_name,
 					details_text=details_text,
 					strict_reminder=(attempt > 0),
+					lyrics_text=lyrics_text,
 				)
 				if not intro:
 					print(f"{Colors.WARNING}Intro option {label} attempt {attempt + 1} rejected: empty intro{Colors.ENDC}")
@@ -369,14 +381,14 @@ class DiscJockey:
 					accepted_relaxed = True
 					print(
 						f"{Colors.WARNING}Intro option {label} attempt {attempt + 1} "
-						f"accepted with relaxed validation: {reason}{Colors.ENDC}"
+						f"accepted with relaxed validation: {escape(reason)}{Colors.ENDC}"
 					)
 					break
-				print(f"{Colors.WARNING}Intro option {label} attempt {attempt + 1} rejected: {reason}{Colors.ENDC}")
+				print(f"{Colors.WARNING}Intro option {label} attempt {attempt + 1} rejected: {escape(reason)}{Colors.ENDC}")
 				intro = ""
 
 			if intro:
-				print(f"{Colors.OKMAGENTA}Intro Option {label}:{Colors.ENDC}\n{intro}\n{'-'*60}")
+				print(f"{Colors.OKMAGENTA}Intro Option {label}:{Colors.ENDC}\n{escape(intro)}\n{'-'*60}")
 				if accepted_relaxed:
 					relaxed_candidates.append((label, intro))
 				else:
@@ -401,8 +413,8 @@ class DiscJockey:
 		if best_intro:
 			return best_intro
 
-		print(f"{Colors.WARNING}Intro referee could not decide; using option {candidates[0][0]} as fallback.{Colors.ENDC}")
-		return candidates[0][1]
+			print(f"{Colors.WARNING}Intro referee could not decide; using option {candidates[0][0]} as fallback.{Colors.ENDC}")
+			return candidates[0][1]
 
 	#============================================
 	def _run_intro_referee(
@@ -416,8 +428,13 @@ class DiscJockey:
 		prompt += "You are judging two DJ introductions for the same song.\n"
 		prompt += "Pick the intro that sounds natural, uses concrete facts from the song details, "
 		prompt += "and creates a smooth handoff from the previous track.\n"
-		prompt += "\nDisqualifying rules: if an option includes 'FACT:' or 'TRIVIA:' in the intro text, "
-		prompt += "or is fewer than 3 sentences, it must lose.\n"
+		prompt += "Use only the text shown in each option. Treat each option as the complete intro.\n"
+		prompt += "Base your judgment and reason on phrases that appear in the option text.\n"
+		prompt += "Prefer intros that highlight interesting or unique facts with vivid context.\n"
+		prompt += "In the reason, cite the most distinctive detail that makes the winner better.\n"
+		prompt += "Use concrete phrasing tied to the option text.\n"
+		prompt += "\nValidity rules: an option that includes 'FACT:' or 'TRIVIA:' in the intro text is invalid. "
+		prompt += "An option with fewer than 3 sentences is invalid.\n"
 		prompt += "Prefer options that mention the song title when it fits naturally.\n"
 		prompt += "Choose based on quality and naturalness, with brevity as a secondary factor.\n"
 		prompt += "(***) Current song summary:\n"
@@ -443,7 +460,9 @@ class DiscJockey:
 		ref_reason = llm_wrapper.extract_xml_tag(raw, "reason")
 
 		if ref_reason:
-			print(f"{Colors.OKGREEN}Intro referee reason: {ref_reason}{Colors.ENDC}")
+			clean_reason = self._clean_referee_reason(ref_reason)
+			if clean_reason:
+				print(f"{Colors.OKGREEN}Intro referee reason: {escape(clean_reason)}{Colors.ENDC}")
 
 		label = self._resolve_intro_referee_winner(winner_text, candidates)
 		if label:
@@ -452,7 +471,8 @@ class DiscJockey:
 					print(f"{Colors.OKCYAN}Intro referee selected option {label}.{Colors.ENDC}")
 					return candidate_text
 
-		print(f"{Colors.WARNING}Intro referee response was unusable (winner: {winner_text}).{Colors.ENDC}")
+		winner_display = escape(str(winner_text)) if winner_text is not None else ""
+		print(f"{Colors.WARNING}Intro referee response was unusable (winner: {winner_display}).{Colors.ENDC}")
 		return ""
 
 	#============================================
@@ -466,11 +486,25 @@ class DiscJockey:
 		return ""
 
 	#============================================
+	def _clean_referee_reason(self, reason: str) -> str:
+		if not reason:
+			return ""
+		cleaned = reason.strip()
+		cleaned = re.sub(r"\bspecific to the song details\b", "", cleaned, flags=re.IGNORECASE)
+		cleaned = re.sub(r"\bmentions the band name\b", "", cleaned, flags=re.IGNORECASE)
+		cleaned = re.sub(r"\bmentioning the band name\b", "", cleaned, flags=re.IGNORECASE)
+		cleaned = re.sub(r"\bmentioning the artist name\b", "", cleaned, flags=re.IGNORECASE)
+		cleaned = re.sub(r"\bmentions the artist name\b", "", cleaned, flags=re.IGNORECASE)
+		cleaned = re.sub(r"\bmentioning the song details\b", "", cleaned, flags=re.IGNORECASE)
+		cleaned = re.sub(r"\s{2,}", " ", cleaned).strip(" ,.-")
+		return cleaned
+
+	#============================================
 	def _print_candidate_pool(self, candidates: list[audio_utils.Song]) -> None:
 		print(f"{Colors.OKMAGENTA}Candidates for next song:{Colors.ENDC}")
 		lines = []
 		for song in candidates:
-			lines.append(song.one_line_info())
+			lines.append(song.one_line_info(color=True))
 		lines.sort()
 		print('\n'.join(lines))
 
@@ -505,7 +539,7 @@ class DiscJockey:
 
 			resolved = self._resolve_referee_winner(winner_text, valid)
 			if resolved and resolved.song:
-				file_name = os.path.basename(resolved.song.path)
+				file_name = escape(os.path.basename(resolved.song.path))
 				print(f"{Colors.OKCYAN}Referee selected: {file_name}{Colors.ENDC}")
 				if ref_reason:
 					print(f"{Colors.OKGREEN}Referee reason: {ref_reason}{Colors.ENDC}")
@@ -562,16 +596,18 @@ class DiscJockey:
 	#============================================
 	def _log_referee_failure(self, winner_text: str, ref_reason: str, raw_output: str) -> None:
 		if winner_text:
+			escaped = escape(winner_text.strip())
 			print(
-				f"{Colors.WARNING}Referee response could not be matched to a candidate (winner tag: '{winner_text.strip()}').{Colors.ENDC}"
+				f"{Colors.WARNING}Referee response could not be matched to a candidate (winner tag: '{escaped}').{Colors.ENDC}"
 			)
 		else:
 			print(f"{Colors.WARNING}Referee reply was missing a <winner> tag.{Colors.ENDC}")
 		if ref_reason:
-			print(f"{Colors.WARNING}Referee <reason> text (unparsed): {ref_reason}{Colors.ENDC}")
+			escaped = escape(ref_reason)
+			print(f"{Colors.WARNING}Referee <reason> text (unparsed): {escaped}{Colors.ENDC}")
 		if raw_output:
 			snippet = raw_output.splitlines()
-			display = "\n".join(snippet[:6])
+			display = escape("\n".join(snippet[:6]))
 			print(f"{Colors.WARNING}Referee raw output preview:\n{display}{Colors.ENDC}")
 
 	#============================================

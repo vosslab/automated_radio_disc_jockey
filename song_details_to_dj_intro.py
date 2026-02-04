@@ -4,21 +4,20 @@
 import argparse
 import os
 import re
+import unicodedata
+
+# PIP3 modules
+from rich import print
+from rich.markup import escape
 
 # Local repo modules
+from cli_colors import Colors
 import audio_utils
 import audio_file_to_details
 import llm_wrapper
+import transcribe_audio
 
 #============================================
-class Colors:
-	OKBLUE = "\033[94m"
-	OKGREEN = "\033[92m"
-	OKCYAN = "\033[96m"
-	WARNING = "\033[93m"
-	FAIL = "\033[91m"
-	ENDC = "\033[0m"
-
 #============================================
 MAX_INTRO_CHARS = 1200
 MIN_INTRO_SENTENCES = 3
@@ -29,6 +28,7 @@ MIN_RELAXED_SENTENCES = 2
 MIN_RELAXED_WORDS = 12
 MAX_REPEAT_SENTENCE = 2
 EXPECTED_FACT_LINES = 5
+MAX_LYRICS_CHARS = 1200
 TITLE_STOPWORDS = {
 	"a",
 	"an",
@@ -110,11 +110,85 @@ def _strip_code_fences(text: str) -> str:
 	return text.replace("`", " ")
 
 #============================================
+def _sanitize_lyrics_text(text: str) -> str:
+	if not text:
+		return ""
+	ascii_text = _to_aggressive_ascii(text)
+	ascii_text = ascii_text.replace("\r\n", "\n").replace("\r", "\n")
+	lines = []
+	current_len = 0
+	for raw_line in ascii_text.splitlines():
+		line = raw_line.strip()
+		if not line:
+			continue
+		line = re.sub(r"\s+", " ", line)
+		if not line:
+			continue
+		if current_len + len(line) + 1 > MAX_LYRICS_CHARS:
+			remaining = MAX_LYRICS_CHARS - current_len
+			if remaining > 10:
+				lines.append(line[:remaining].rstrip())
+			break
+		lines.append(line)
+		current_len += len(line) + 1
+	return "\n".join(lines).strip()
+
+#============================================
+def _to_aggressive_ascii(text: str) -> str:
+	if text is None:
+		return ""
+	if isinstance(text, bytes):
+		udata = text.decode("utf-8", errors="ignore")
+	else:
+		udata = str(text)
+
+	replacements = {
+		"\u2018": "'",
+		"\u2019": "'",
+		"\u201c": "\"",
+		"\u201d": "\"",
+		"\u2013": "-",
+		"\u2014": "-",
+		"\u2026": "...",
+		"\u00a0": " ",
+	}
+	for old, new in replacements.items():
+		udata = udata.replace(old, new)
+
+	try:
+		import transliterate
+		try:
+			udata = transliterate.translit(udata, reversed=True)
+		except Exception:
+			pass
+	except Exception:
+		pass
+
+	try:
+		nfkd_form = unicodedata.normalize("NFKD", udata)
+	except Exception:
+		nfkd_form = udata
+
+	ascii_text = nfkd_form.encode("ASCII", "ignore").decode("ASCII")
+	ascii_text = re.sub(r"[^\x09\x0A\x0D\x20-\x7E]+", " ", ascii_text)
+	ascii_text = ascii_text.replace("\t", " ")
+	ascii_text = re.sub(r"[ ]{2,}", " ", ascii_text)
+	return ascii_text.strip()
+
+#============================================
 def _starts_with_boilerplate(text: str) -> bool:
 	if not text:
 		return False
-	pattern = r"^\s*ladies and gentlemen,?\s*welcome to"
-	return re.match(pattern, text, flags=re.IGNORECASE) is not None
+	patterns = [
+		r"^\s*ladies and gentlemen,?\s*welcome to",
+		r"^\s*hey there,?\s*(?:disney fans|music lovers|folks|everyone)\b",
+		r"^\s*hello,?\s*(?:disney fans|music lovers|folks|everyone)\b",
+		r"^\s*hi there,?\s*(?:disney fans|music lovers|folks|everyone)\b",
+	]
+	for pattern in patterns:
+		if re.match(pattern, text, flags=re.IGNORECASE):
+			return True
+	return False
 
 #============================================
 def _strip_leading_boilerplate_sentence(text: str) -> str:
@@ -191,13 +265,15 @@ def _refine_intro_with_llm(
 	if not text:
 		return None
 	prompt = (
-		"You are rewriting a DJ intro to fix issues. "
+		"You are rewriting a DJ intro to fix issues and reduce fluff. "
 		"Use only the provided facts and rephrase the text. "
 		"Use plain text with simple formatting. "
 		"Keep it lively and non-repetitive. "
 		"Start with a song-specific line to get the audience engaged immediately. "
 		"Keep it to 5-7 sentences. "
-		"Return only the revised intro text.\n\n"
+		"Trim filler phrases and focus on the most distinctive details. "
+		"Aim to reduce the length by about 25 percent. "
+		"Wrap only the revised intro inside <response>...</response>.\n\n"
 		f"Issue: {reason}\n"
 		"Intro text:\n"
 		f"{text}\n"
@@ -205,8 +281,17 @@ def _refine_intro_with_llm(
 	refined = llm_wrapper.run_llm(prompt, model_name=model_name)
 	if not refined:
 		return None
-	refined = _strip_code_fences(refined)
-	return refined.strip() or None
+	extracted = llm_wrapper.extract_xml_tag(refined, "response")
+	candidate = extracted or refined
+	candidate = _strip_code_fences(candidate)
+	candidate = re.sub(
+		r"^\s*here is the rewritten intro text\s*:?\s*",
+		"",
+		candidate,
+		flags=re.IGNORECASE,
+	).strip()
+	candidate = candidate.strip("\"'").strip()
+	return candidate or None
 
 #============================================
 def _title_tokens(title: str) -> list[str]:
@@ -341,6 +426,15 @@ def _append_title_if_missing(text: str, song_title: str) -> str:
 	return f"{song_title}."
 
 #============================================
+def _intro_stats(text: str) -> tuple[int, int, int]:
+	if not text:
+		return (0, 0, 0)
+	chars = len(text)
+	words = len(text.split())
+	sentences = _estimate_sentence_count(text)
+	return (chars, words, sentences)
+
+#============================================
 def _build_relaxed_intro(raw_text: str, song: audio_utils.Song) -> str | None:
 	cleaned = _sanitize_intro_text(raw_text)
 	if not cleaned:
@@ -365,6 +459,7 @@ def prepare_intro_text(
 	details_text: str | None = None,
 	strict_reminder: bool = False,
 	allow_fallback: bool = True,
+	lyrics_text: str | None = None,
 ) -> str | None:
 	"""
 	Build a DJ prompt for a song, query the LLM, and extract the intro text.
@@ -378,13 +473,20 @@ def prepare_intro_text(
 	Returns:
 		str | None: Cleaned intro text inside <response> tags, or None on failure.
 	"""
-	print(f"{Colors.OKBLUE}Gathering song info and building prompt for {os.path.basename(song.path)}...{Colors.ENDC}")
+	file_name = escape(os.path.basename(song.path))
+	print(f"{Colors.OKBLUE}Gathering song info and building prompt for {file_name}...{Colors.ENDC}")
+
+	if lyrics_text is None and song:
+		file_name = escape(os.path.basename(song.path))
+		print(f"{Colors.OKBLUE}Transcribing lyrics for {file_name}...{Colors.ENDC}")
+		lyrics_text = transcribe_audio.transcribe_audio(song.path)
 
 	prompt = build_prompt(
 		song=song,
 		raw_text=None,
 		prev_song=prev_song,
 		details_text=details_text,
+		lyrics_text=lyrics_text,
 	)
 	if strict_reminder:
 		prompt += "\n(**) IMPORTANT VALIDATION RULES:\n"
@@ -404,7 +506,7 @@ def prepare_intro_text(
 			return None
 		relaxed_intro = _build_relaxed_intro(dj_intro, song)
 		if relaxed_intro:
-			print(f"{Colors.WARNING}{reason} Using relaxed intro fallback.{Colors.ENDC}")
+			print(f"{Colors.WARNING}{escape(reason)} Using relaxed intro fallback.{Colors.ENDC}")
 			return relaxed_intro
 		return None
 
@@ -414,12 +516,31 @@ def prepare_intro_text(
 		print(f"{Colors.WARNING}No <facts> block detected; continuing anyway.{Colors.ENDC}")
 	facts_ok, facts_reason = _validate_facts_block(facts_block)
 	if not facts_ok:
-		print(f"{Colors.WARNING}Invalid <facts> block ({facts_reason}); continuing anyway.{Colors.ENDC}")
+		print(f"{Colors.WARNING}Invalid <facts> block ({escape(facts_reason)}); continuing anyway.{Colors.ENDC}")
 
 	clean_intro = llm_wrapper.extract_xml_tag(dj_intro, "response")
 
 	if clean_intro:
-		final_intro = _finalize_intro_text(clean_intro, song, model_name, allow_fallback)
+		print(f"{Colors.OKBLUE}Cleaning intro with LLM to reduce fluff...{Colors.ENDC}")
+		before_chars, before_words, before_sentences = _intro_stats(clean_intro)
+		refined_intro = _refine_intro_with_llm(
+			clean_intro,
+			song,
+			model_name,
+			"polish for clarity and remove filler",
+		)
+		if refined_intro:
+			after_chars, after_words, after_sentences = _intro_stats(refined_intro)
+			print(
+				f"{Colors.OKBLUE}Intro stats (before/after): "
+				f"chars {before_chars}->{after_chars}, "
+				f"words {before_words}->{after_words}, "
+				f"sentences {before_sentences}->{after_sentences}{Colors.ENDC}"
+			)
+		candidate_intro = refined_intro or clean_intro
+		final_intro = _finalize_intro_text(candidate_intro, song, model_name, False)
+		if not final_intro and refined_intro:
+			final_intro = _finalize_intro_text(clean_intro, song, model_name, False)
 		if final_intro:
 			print(f"Extracted intro length: {len(final_intro)} characters.")
 			return final_intro
@@ -441,6 +562,7 @@ def build_prompt(
 	raw_text: str | None,
 	prev_song: audio_utils.Song | None = None,
 	details_text: str | None = None,
+	lyrics_text: str | None = None,
 ) -> str:
 	"""
 	Build the LLM prompt from song metadata or a simple summary.
@@ -468,6 +590,8 @@ def build_prompt(
 		"Make the first sentence tie directly to the song details. "
 		"Prefer human and creative context over statistics. "
 		"Use only facts supported by the Song details. "
+		"Use Wikipedia-derived details only when they clearly match the song title, artist, and album. "
+		"When details feel mismatched, lean on the file summary and confirmed metadata. "
 	)
 
 	if not raw_text and not song:
@@ -483,11 +607,11 @@ def build_prompt(
 
 	ending = (
 		"\n\n(**) First, write exactly five lines that each start with 'FACT: ' or 'TRIVIA: '. "
-		"Each FACT/TRIVIA line must contain one specific factual detail drawn from the Song details. "
+		"Each FACT/TRIVIA line must contain an interesting or unique factual detail drawn from the Song details. "
 		"Prioritize personal or creative context over charts or awards, such as: "
 		"how or why the song was written, stories from recording, changes in the band's sound, "
 		"lyrical themes, tensions or milestones for the band, or how it fits into the album. "
-		"Only use chart positions or awards if there is no stronger story available. "
+		"Pick details that feel distinctive or revealing for this specific song. "
 		"Wrap those five lines inside <facts>...</facts> tags. "
 		"\n(**) After the <facts> block, write the final spoken intro. "
 		"In the intro, weave in at least two of the facts you listed. "
@@ -518,6 +642,15 @@ def build_prompt(
 	prompt += details_intro
 	prompt += "Song details:\n"
 	prompt += details_text + "\n\n"
+	if lyrics_text:
+		clean_lyrics = _sanitize_lyrics_text(lyrics_text)
+		if clean_lyrics:
+			print(
+				f"{Colors.TEAL}Lyrics chars (raw/clean): "
+				f"{len(lyrics_text)} / {len(clean_lyrics)}{Colors.ENDC}"
+			)
+			prompt += "Lyrics (auto-transcribed from audio; partial):\n"
+			prompt += clean_lyrics + "\n\n"
 
 	prompt += "Write a specific, concrete intro with small stories; "
 	prompt += "facts and small stories are more important than hype.\n"
@@ -550,14 +683,25 @@ def main() -> None:
 		details_text = None
 		if not args.use_metadata and song_obj:
 			details_text = song_obj.one_line_info()
-		prompt = build_prompt(song=song_obj, raw_text=None, prev_song=prev_song, details_text=details_text)
+		lyrics_text = None
+		if song_obj:
+			file_name = escape(os.path.basename(song_obj.path))
+			print(f"{Colors.OKBLUE}Transcribing lyrics for {file_name}...{Colors.ENDC}")
+			lyrics_text = transcribe_audio.transcribe_audio(song_obj.path)
+		prompt = build_prompt(
+			song=song_obj,
+			raw_text=None,
+			prev_song=prev_song,
+			details_text=details_text,
+			lyrics_text=lyrics_text,
+		)
 
 	print(f"{Colors.OKBLUE}Sending prompt to LLM...{Colors.ENDC}")
 	raw = llm_wrapper.run_llm(prompt)
 	intro = llm_wrapper.extract_response_text(raw)
 	if intro:
 		print(f"{Colors.OKGREEN}DJ Intro:{Colors.ENDC}")
-		print(f"{Colors.OKCYAN}{intro}{Colors.ENDC}")
+		print(f"{Colors.OKCYAN}{escape(intro)}{Colors.ENDC}")
 	else:
 		print(f"{Colors.FAIL}No <response> block found in LLM output.{Colors.ENDC}")
 

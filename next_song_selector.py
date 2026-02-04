@@ -6,21 +6,17 @@ import os
 import re
 from dataclasses import dataclass
 
+# PIP3 modules
+from rich import print
+from rich.markup import escape
+
 # Local repo modules
+from cli_colors import Colors
 import llm_wrapper
 import audio_utils
 from audio_utils import Song
 
 #============================================
-class Colors:
-	OKBLUE = "\033[94m"
-	OKGREEN = "\033[92m"
-	OKCYAN = "\033[96m"
-	OKMAGENTA = "\033[95m"
-	WARNING = "\033[93m"
-	FAIL = "\033[91m"
-	ENDC = "\033[0m"
-
 #============================================
 @dataclass
 class SelectionResult:
@@ -56,6 +52,121 @@ def clean_llm_choice(choice_text: str | None) -> str:
 	text = re.sub(r"\s+", " ", text)
 	text = re.sub(r"^[\-\*\#\d\.\)\]]+\s*", "", text)
 	return text.strip()
+
+#============================================
+def _estimate_sentence_count(text: str) -> int:
+	"""
+	Estimate sentence count with a simple punctuation heuristic.
+	"""
+	parts = re.split(r"[.!?]+", text or "")
+	count = 0
+	for part in parts:
+		words = part.strip().split()
+		if len(words) >= 3:
+			count += 1
+	return count
+
+#============================================
+def _reason_has_score_shorthand(reason: str) -> bool:
+	"""
+	Detect score-only or shorthand reason formats that are not human-readable.
+	"""
+	if not reason:
+		return False
+	pattern = r"\bP\s*,\s*G\s*,\s*I\s*,\s*S\s*,\s*T\s*,\s*M\s*,\s*CA\b"
+	if re.search(pattern, reason, flags=re.IGNORECASE):
+		return True
+	pattern_with_values = r"\bP\s*,\s*G\s*,\s*I\s*,\s*S\s*,\s*T\s*,\s*M\s*,\s*CA\s*=\s*\d"
+	if re.search(pattern_with_values, reason, flags=re.IGNORECASE):
+		return True
+	return False
+
+#============================================
+def is_reason_acceptable(reason: str, candidates: list[Song]) -> bool:
+	"""
+	Validate the LLM reason is human-readable.
+	"""
+	if not reason:
+		return False
+
+	stripped = reason.strip()
+	if not stripped:
+		return False
+
+	upper = stripped.upper()
+	if "WHY YOU PICKED" in upper or "FILENAME.MP3" in upper:
+		return False
+
+	if _reason_has_score_shorthand(stripped):
+		return False
+
+	if _estimate_sentence_count(stripped) < 3:
+		return False
+
+	letters = re.sub(r"[^A-Za-z]", "", stripped)
+	if len(letters) < 20:
+		return False
+
+	return True
+
+#============================================
+def build_fallback_reason(choice_text: str, chosen_song: Song | None, candidates: list[Song]) -> str:
+	"""
+	Build a short, human-readable fallback reason when the LLM output is unusable.
+	"""
+	if not choice_text:
+		return ""
+
+	choice_label = choice_text
+	artist_note = ""
+	if chosen_song and chosen_song.artist:
+		artist_note = f" by {chosen_song.artist}"
+
+	return (
+		f"Picked {choice_label}{artist_note} to keep the flow steady after the current track. "
+		"That choice keeps the energy consistent and the transition smooth. "
+		"It should feel like a natural continuation rather than a hard pivot."
+	)
+
+#============================================
+def build_selection_prompt(current_song: Song, candidates: list[Song], strict_reason: bool = False) -> str:
+	"""
+	Build the LLM prompt for next-song selection.
+	"""
+	last_artist = current_song.artist.lower()
+	last_album = current_song.album.lower()
+	last_title = current_song.title.lower()
+
+	prompt = ""
+	prompt += "You are selecting the next track for a radio show. "
+	prompt += "\n(1) Consider genre, mood, energy, tempo, vocal style, era, and how smoothly the handoff will feel. "
+	prompt += "\n(2) From the candidates, identify the four best matches for the current song. "
+	prompt += "\n(3) Rank those four by how well they fit after the current track. "
+	prompt += "\n(4) After ranking the top four choices, choose the single best track as the next song. "
+	prompt += "\n(5) In your reasoning, write exactly 3 sentences (max 90 words). "
+	prompt += "Use normal words and complete sentences. "
+	prompt += "Explain why the pick fits the current track. "
+	prompt += "Mention at least one detail from the candidate list (artist, title, album, mood, tempo, or style). "
+	prompt += "\n(6) Use the file names exactly as shown in the candidate list. "
+	prompt += "\n(7) select the least jarring and the most 'this DJ knows what they are doing' choice."
+	prompt += "\n(8) Keep your output tightly structured and short."
+	prompt += "\n(9) Respond with these two specific XML tags for processing "
+	prompt += "<choice>FILENAME.mp3</choice>"
+	prompt += "<reason>Exactly three sentences explaining the pick.</reason>\n"
+	if strict_reason:
+		prompt += "\n(10) Use at least one artist, title, or album detail from the candidate list.\n"
+
+	prompt += (
+		f"Current song: {os.path.basename(current_song.path)} | "
+		f"Artist: {last_artist} | Album: {last_album} | Title: {last_title}\n"
+	)
+	prompt += "Candidates:\n"
+	for song in candidates:
+		prompt += (
+			f"- {os.path.basename(song.path)} | "
+			f"Artist: {song.artist} | Album: {song.album} | Title: {song.title}\n"
+		)
+	return prompt
 
 #============================================
 def _candidate_key_variants(value: str) -> set[str]:
@@ -172,68 +283,44 @@ def choose_next_song(current_song: Song, song_list: list[str], sample_size: int,
 
 	if show_candidates:
 		print(f"{Colors.OKMAGENTA}Candidates for next song:{Colors.ENDC}")
-		lines = [song.one_line_info() for song in candidate_songs]
+		lines = [song.one_line_info(color=True) for song in candidate_songs]
 		lines.sort()
 		print('\n'.join(lines))
 
-	last_artist = current_song.artist.lower()
-	last_album = current_song.album.lower()
-	last_title = current_song.title.lower()
-
-	prompt = ""
-	prompt += "You are selecting the next track for a radio show. "
-	prompt += "\n(1) Score each candidate song in the following categories. "
-	prompt += "(P) Popularity 1 mainstream, 3 niche or indie, 4 obscure, 5 very obscure. Obscure is preferred."
-	prompt += "(G) Genre similarity 1 totally different, 3 adjacent traits, 5 same or very close. "
-	prompt += "(I) Intensity similarity 1 very mismatched intensity, 3 moderate match, 5 very similar intensity. "
-	prompt += "(S) Style similarity 1 very different vibe, 3 partial overlap, 5 strong alignment. "
-	prompt += "(T) Tempo similarity 1 very different speed, 3 moderately different, 5 very close. "
-	prompt += "(M) Mood similarity 1 opposite emotional color, 3 partial match, 5 strong emotional match. "
-	prompt += "(CA) Critical acclaim 1 very different stature than the current song, 3 somewhat similar, 5 very close. "
-	prompt += "Score acclaim relative to the current track and base it on artistic influence or reputation. "
-	prompt += "You may display only a seven number summary per candidate: P,G,I,S,T,M,CA. No explanations. "
-	prompt += "The order of the scores above is the ranking or weight of each category, from highest to lowest. "
-	prompt += "\n(2) From the candidates, identify the four best matches for the current song. "
-	prompt += "\n(3) Rank those four by how well they fit after the current track. "
-	prompt += "Use the numerical rankings as the primary factors. "
-	prompt += "\n(4) After ranking the top four choices, choose the single best track as the next song. "
-	prompt += "\n(5) In your reasoning, be moderately detailed but strictly bounded. "
-	prompt += "Inside <reason>, write 2-4 sentences (max 80 words). "
-	prompt += "You must include: "
-	prompt += "(a) the final pick's 7-number summary as 'P,G,I,S,T,M,CA = x,x,x,x,x,x,x', and "
-	prompt += "(b) exactly two runner-up filenames and one short clause for each explaining why they lost. "
-	prompt += "\n(6) Use the file names exactly as shown in the candidate list. "
-	prompt += "\n(7) select the least jarring and the most 'this DJ knows what they are doing' choice."
-	prompt += "\n(8) Keep your output tightly structured and short."
-	prompt += "\n(9) Respond with these two specific XML tags for processing "
-	prompt += "<choice>FILENAME.mp3</choice>"
-	prompt += "<reason>WHY YOU PICKED IT AND BREAKDOWN OF WHY THE OTHER TOP SONGS WERE REJECTED</reason>\n"
-	prompt += (
-		f"Current song: {os.path.basename(current_song.path)} | "
-		f"Artist: {last_artist} | Album: {last_album} | Title: {last_title}\n"
-	)
-	prompt += "Candidates:\n"
-	for song in candidate_songs:
-		prompt += (
-			f"- {os.path.basename(song.path)} | "
-			f"Artist: {song.artist} | Album: {song.album} | Title: {song.title}\n"
-		)
+	prompt = build_selection_prompt(current_song, candidate_songs)
 
 	raw = llm_wrapper.run_llm(prompt, model_name=model_name)
 	raw_choice = llm_wrapper.extract_xml_tag(raw, "choice")
 	choice = clean_llm_choice(raw_choice)
 	reason = llm_wrapper.extract_xml_tag(raw, "reason")
 
+	if not is_reason_acceptable(reason, candidate_songs):
+		print(f"{Colors.WARNING}LLM reason was placeholder or shorthand; retrying for a readable explanation.{Colors.ENDC}")
+		retry_prompt = build_selection_prompt(current_song, candidate_songs, strict_reason=True)
+		raw_retry = llm_wrapper.run_llm(retry_prompt, model_name=model_name)
+		raw_choice_retry = llm_wrapper.extract_xml_tag(raw_retry, "choice")
+		choice_retry = clean_llm_choice(raw_choice_retry)
+		reason_retry = llm_wrapper.extract_xml_tag(raw_retry, "reason")
+		if is_reason_acceptable(reason_retry, candidate_songs):
+			if choice_retry:
+				choice = choice_retry
+				raw_choice = raw_choice_retry
+			reason = reason_retry
+
 	if choice:
-		print(f"{Colors.OKGREEN}LLM selection result: {choice}{Colors.ENDC}")
+		print(f"{Colors.OKGREEN}LLM selection result: {escape(choice)}{Colors.ENDC}")
 	elif raw_choice:
-		print(f"{Colors.WARNING}LLM choice text was unusable: {raw_choice}{Colors.ENDC}")
+		print(f"{Colors.WARNING}LLM choice text was unusable: {escape(raw_choice)}{Colors.ENDC}")
 	if reason:
-		print(f"{Colors.OKMAGENTA}LLM reason: {reason}{Colors.ENDC}")
+		print(f"{Colors.OKMAGENTA}LLM reason: {escape(reason)}{Colors.ENDC}")
+	elif raw_choice:
+		print(f"{Colors.WARNING}LLM reason was unusable; continuing without it.{Colors.ENDC}")
 
 	chosen_song = match_candidate_choice(choice, candidate_songs)
+	if not is_reason_acceptable(reason, candidate_songs):
+		reason = build_fallback_reason(choice, chosen_song, candidate_songs)
 	if chosen_song:
-		base_name = os.path.basename(chosen_song.path).strip()
+		base_name = escape(os.path.basename(chosen_song.path).strip())
 		print(f"{Colors.OKCYAN}Final next song: {base_name}{Colors.ENDC}")
 	if chosen_song is None:
 		print(f"{Colors.WARNING}LLM choice did not match any candidate; no selection made.{Colors.ENDC}")
@@ -255,13 +342,13 @@ def main() -> None:
 
 	current_song = Song(current_path)  # only one heavy metadata load here
 	print("CURRENT SONG:")
-	print(current_song.one_line_info())
+	print(current_song.one_line_info(color=True))
 	print("="*60)
 
 	result = choose_next_song(current_song, song_paths, args.sample_size, model_name=model_name)
 	next_song = result.song
 	if next_song:
-		print(f"{Colors.OKCYAN}Next song: {next_song.path}{Colors.ENDC}")
+		print(f"{Colors.OKCYAN}Next song: {escape(next_song.path)}{Colors.ENDC}")
 	else:
 		print(f"{Colors.WARNING}No selection made.{Colors.ENDC}")
 

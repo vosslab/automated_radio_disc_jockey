@@ -17,11 +17,9 @@ except ImportError:
 from gtts import gTTS
 try:
 	from rich.console import Console
-	from rich.panel import Panel
 	RICH_CONSOLE = Console()
 except ImportError:
 	Console = None
-	Panel = None
 	RICH_CONSOLE = None
 
 DEFAULT_ENGINE = "say"
@@ -108,16 +106,8 @@ def _strip_boilerplate_intro(text: str) -> str:
 #============================================
 def _print_say_command(command: list[str], text: str, show_text: bool = False) -> None:
 	command_prefix = " ".join(command[:-1] if command and text and command[-1] == text else command)
-	if RICH_CONSOLE and Panel:
-		body_lines = [
-			"[say] running:",
-			f"   {command_prefix}",
-		]
-		if show_text and text:
-			formatted_text = text.replace("\n", "\n   ")
-			body_lines.append(f"   {formatted_text}")
-		panel_text = "\n".join(body_lines)
-		RICH_CONSOLE.print(Panel(panel_text, style="yellow"))
+	if RICH_CONSOLE:
+		RICH_CONSOLE.print(f"[say] running: {command_prefix}")
 	else:
 		print(f"[say] running: {command_prefix}")
 

@@ -16,14 +16,13 @@ import urllib.request
 import mutagen
 import mutagen.mp3
 import mutagen.flac
+from rich import print
+from rich.markup import escape
+
+# Local repo modules
+from cli_colors import Colors
 
 #============================================
-class Colors:
-	OKBLUE = "\033[94m"
-	OKGREEN = "\033[92m"
-	BOLD = "\033[1m"
-	ENDC = "\033[0m"
-
 #============================================
 class Metadata:
 	"""
@@ -31,12 +30,6 @@ class Metadata:
 	Handles Wikipedia lookups for artist, album, and song.
 	"""
 	#============================================
-	class Colors:
-		OKBLUE = "\033[94m"
-		OKGREEN = "\033[92m"
-		BOLD = "\033[1m"
-		ENDC = "\033[0m"
-
 	#============================================
 	def __init__(self, filename: str, debug: bool = False):
 		"""
@@ -63,10 +56,13 @@ class Metadata:
 	#============================================
 	def __str__(self) -> str:
 		"""Returns a formatted string representation of the metadata."""
+		title = escape(self.title)
+		artist = escape(self.artist)
+		album = escape(self.album)
 		return (
-			f"{Colors.BOLD}Title:{Colors.ENDC}  {self.title}\n"
-			f"{Colors.BOLD}Artist:{Colors.ENDC} {self.artist}\n"
-			f"{Colors.BOLD}Album:{Colors.ENDC}  {self.album}\n"
+			f"{Colors.BOLD}Title:{Colors.ENDC}  {title}\n"
+			f"{Colors.BOLD}Artist:{Colors.ENDC} {artist}\n"
+			f"{Colors.BOLD}Album:{Colors.ENDC}  {album}\n"
 			f".. Compilation: {self.is_compilation}"
 		)
 
@@ -130,7 +126,7 @@ class Metadata:
 					return url, desc
 		except Exception as exc:
 			if self.debug:
-				print(f"Last.fm lookup failed ({kind}): {exc}")
+				print(f"Last.fm lookup failed ({escape(kind)}): {escape(str(exc))}")
 		return None, None
 
 	#============================================
@@ -172,7 +168,7 @@ class Metadata:
 				break
 		except Exception as exc:
 			if self.debug:
-				print(f"AllMusic lookup failed ({kind}): {exc}")
+				print(f"AllMusic lookup failed ({escape(kind)}): {escape(str(exc))}")
 		return None, None
 
 	#============================================
@@ -196,7 +192,7 @@ class Metadata:
 		Searches Wikipedia and returns a list of candidate titles.
 		"""
 		if self.debug is True:
-			print(f"Searching wikipedia: query='{query}'")
+			print(f"Searching wikipedia: query='{escape(query)}'")
 		params = {
 			"action": "query",
 			"list": "search",
@@ -214,13 +210,13 @@ class Metadata:
 				payload = resp.read().decode("utf-8", errors="ignore")
 		except Exception as error:
 			if self.debug:
-				print(f".. Wikipedia search error: {error}")
+				print(f".. Wikipedia search error: {escape(str(error))}")
 			return []
 		try:
 			data = json.loads(payload)
 		except json.JSONDecodeError as error:
 			if self.debug:
-				print(f".. Wikipedia JSON parse error: {error}")
+				print(f".. Wikipedia JSON parse error: {escape(str(error))}")
 			return []
 		results = data.get("query", {}).get("search", [])
 		titles = []
@@ -246,13 +242,13 @@ class Metadata:
 				payload = resp.read().decode("utf-8", errors="ignore")
 		except Exception as error:
 			if self.debug:
-				print(f".. Wikipedia summary error for {title}: {error}")
+				print(f".. Wikipedia summary error for {escape(str(title))}: {escape(str(error))}")
 			return None, None, None
 		try:
 			data = json.loads(payload)
 		except json.JSONDecodeError as error:
 			if self.debug:
-				print(f".. Wikipedia summary JSON parse error: {error}")
+				print(f".. Wikipedia summary JSON parse error: {escape(str(error))}")
 			return None, None, None
 		if data.get("type") == "disambiguation":
 			return None, None, None
@@ -284,7 +280,8 @@ class Metadata:
 			if summary:
 				clean_summary_text = self._clean_summary(summary)
 				if self.debug is True:
-					print(f".. Summary for {candidate}: {clean_summary_text[:100]}")
+					summary_preview = clean_summary_text[:100]
+					print(f".. Summary for {escape(str(candidate))}: {escape(summary_preview)}")
 				return page_title, page_url, clean_summary_text
 		return None, None, None
 
@@ -294,14 +291,14 @@ class Metadata:
 		Fetches Wikipedia summaries for the song, album, and artist.
 		Updates the class attributes with the fetched data.
 		"""
-		print(f"{self.Colors.OKBLUE}Searching Wikipedia for:{self.Colors.ENDC}\n{self}")
+		print(f"{Colors.OKBLUE}Searching Wikipedia for:{Colors.ENDC}\n{self}")
 
 		# Fetch song info
 		search_title = self._clean_title(self.title)
-		print(f"{self.Colors.OKBLUE}Searching song page for '{search_title}'...{self.Colors.ENDC}")
+		print(f"{Colors.OKBLUE}Searching song page for '{escape(search_title)}'...{Colors.ENDC}")
 		_, self.song_url, self.song_summary = self.search_wikipedia(f"{search_title} song by {self.artist}")
 		if self.song_summary:
-			print(f"{self.Colors.OKGREEN}Received song summary ({len(self.song_summary)} chars).{self.Colors.ENDC}")
+			print(f"{Colors.OKGREEN}Received song summary ({len(self.song_summary)} chars).{Colors.ENDC}")
 		if not self.song_summary:
 			lfm_url, lfm_desc = self._fetch_lastfm_wiki(self.artist, search_title, kind="song")
 			if lfm_desc:
@@ -319,10 +316,10 @@ class Metadata:
 		# Modify artist search query if the name is short (3 characters or fewer)
 		artist_query = f"the artist {self.artist}"
 		# Try searching with "the artist" first
-		print(f"{self.Colors.OKBLUE}Searching artist page for '{self.artist}'...{self.Colors.ENDC}")
+		print(f"{Colors.OKBLUE}Searching artist page for '{escape(self.artist)}'...{Colors.ENDC}")
 		_, self.artist_url, self.artist_summary = self.search_wikipedia(artist_query)
 		if self.artist_summary:
-			print(f"{self.Colors.OKGREEN}Received artist summary ({len(self.artist_summary)} chars).{self.Colors.ENDC}")
+			print(f"{Colors.OKGREEN}Received artist summary ({len(self.artist_summary)} chars).{Colors.ENDC}")
 		if not self.artist_summary:
 			_, self.artist_url, self.artist_summary = self.search_wikipedia(self.artist)
 
@@ -342,12 +339,12 @@ class Metadata:
 
 		# Skip album lookup if it's a compilation
 		if self.is_compilation:
-			print(f"Skipping Wikipedia lookup for album '{self.album}' (detected as a compilation).")
+			print(f"Skipping Wikipedia lookup for album '{escape(self.album)}' (detected as a compilation).")
 		else:
-			print(f"{Colors.OKBLUE}Searching album page for '{self.album}'...{Colors.ENDC}")
+			print(f"{Colors.OKBLUE}Searching album page for '{escape(self.album)}'...{Colors.ENDC}")
 			_, self.album_url, self.album_summary = self.search_wikipedia(f"{self.album} album by {self.artist}")
 			if self.album_summary:
-				print(f"{self.Colors.OKGREEN}Received album summary ({len(self.album_summary)} chars).{self.Colors.ENDC}")
+				print(f"{Colors.OKGREEN}Received album summary ({len(self.album_summary)} chars).{Colors.ENDC}")
 			if not self.album_summary:
 				lfm_url, lfm_desc = self._fetch_lastfm_wiki(self.artist, self.album, kind="album")
 				if lfm_desc:
@@ -417,7 +414,7 @@ def main():
 	try:
 		metadata = Metadata(args.input, debug=args.debug)
 	except ValueError as e:
-		print(f"Error: {e}")
+		print(f"Error: {escape(str(e))}")
 		return
 
 	# Fetch Wikipedia data

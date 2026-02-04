@@ -8,20 +8,13 @@ import mutagen
 import mutagen.mp3
 import mutagen.flac
 import mutagen.easyid3
+from rich import print
+from rich.markup import escape
+
+# Local repo modules
+from cli_colors import Colors
 
 #============================================
-class Colors:
-	HEADER = "\033[95m"
-	OKBLUE = "\033[94m"
-	OKCYAN = "\033[96m"
-	OKGREEN = "\033[92m"
-	OKMAGENTA = "\033[95m"
-	WARNING = "\033[93m"
-	FAIL = "\033[91m"
-	ENDC = "\033[0m"
-	BOLD = "\033[1m"
-	UNDERLINE = "\033[4m"
-
 #============================================
 def get_song_list(directory: str) -> list:
 	"""
@@ -61,14 +54,14 @@ def select_song(song_list: list, sample_size: int) -> str:
 	Returns:
 		str: Path to chosen song.
 	"""
-	colors = Song.Colors
+	colors = Colors
 	sample_size = max(1, min(sample_size, len(song_list)))
 	choices = random.sample(song_list, sample_size)
 	print(f"Please select a song (1-{sample_size}):")
 	index = 1
 	for song in choices:
 		song_obj = song if isinstance(song, Song) else Song(song)
-		print(f"{colors.OKBLUE}{index}:{colors.ENDC} {song_obj.one_line_info()}")
+		print(f"{colors.OKBLUE}{index}:{colors.ENDC} {song_obj.one_line_info(color=True)}")
 		index += 1
 
 	while True:
@@ -100,13 +93,6 @@ class Song:
 	"""
 	Represents a song file with cached metadata and info helpers.
 	"""
-	class Colors:
-		OKBLUE = "\033[94m"
-		OKGREEN = "\033[92m"
-		OKCYAN = "\033[96m"
-		ENDC = "\033[0m"
-		BOLD = "\033[1m"
-
 	#============================================
 	def __init__(self, path: str, debug: bool = False):
 		"""
@@ -163,41 +149,56 @@ class Song:
 				)
 		except Exception as error:
 			if self.debug:
-				print(f"Metadata load failed for {self.path}: {error}")
+				print(f"Metadata load failed for {escape(self.path)}: {escape(str(error))}")
 
 	#============================================
-	def one_line_info(self) -> str:
+	def one_line_info(self, color: bool = False) -> str:
 		"""
 		Return a one-line summary for selection lists.
 		"""
-		c = self.Colors
+		c = Colors if color else None
 		parts = []
 		length_display = self.formatted_length()
 		if length_display:
 			parts.append(f"{length_display}")
-		parts.append(f"{os.path.basename(self.path)}")
-		parts.append(f"Artist: {c.OKGREEN}{self.artist}{c.ENDC}")
+		base_name = os.path.basename(self.path)
+		parts.append(escape(base_name) if color else base_name)
+		if color:
+			artist = escape(self.artist)
+			parts.append(f"Artist: {c.OKGREEN}{artist}{c.ENDC}")
+		else:
+			parts.append(f"Artist: {self.artist}")
 		#parts.append(f"Album: {c.OKCYAN}{self.album}{c.ENDC}")
 		if self.year:
 			parts.append(f"({self.year})")
 		return " | ".join(parts)
 
 	#============================================
-	def multiline_info(self) -> str:
+	def multiline_info(self, color: bool = False) -> str:
 		"""
 		Return a multi-line summary of key fields.
 		"""
-		c = self.Colors
+		c = Colors if color else None
+		label = c.BOLD if color else ""
+		reset = c.ENDC if color else ""
 		length_display = self.formatted_length()
+		if color:
+			title = escape(self.title)
+			artist = escape(self.artist)
+			album = escape(self.album)
+		else:
+			title = self.title
+			artist = self.artist
+			album = self.album
 		lines = [
-			f"{c.BOLD}Title:{c.ENDC}  {self.title}",
-			f"{c.BOLD}Artist:{c.ENDC} {self.artist}",
-			f"{c.BOLD}Album:{c.ENDC}  {self.album}",
+			f"{label}Title:{reset}  {title}",
+			f"{label}Artist:{reset} {artist}",
+			f"{label}Album:{reset}  {album}",
 		]
 		if self.year:
-			lines.append(f"{c.BOLD}Year:{c.ENDC}   {self.year}")
+			lines.append(f"{label}Year:{reset}   {self.year}")
 		if length_display:
-			lines.append(f"{c.BOLD}Length:{c.ENDC} {length_display}")
+			lines.append(f"{label}Length:{reset} {length_display}")
 		lines.append(f".. Compilation: {self.is_compilation}")
 		return "\n".join(lines)
 

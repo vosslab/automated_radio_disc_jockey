@@ -5,17 +5,12 @@ import hashlib
 import datetime
 import subprocess
 
-# Local repo modules
+# PIP3 modules
+from rich import print
+from rich.markup import escape
 
-#============================================
-class Colors:
-	OKBLUE = "\033[94m"
-	OKGREEN = "\033[92m"
-	OKCYAN = "\033[96m"
-	OKMAGENTA = "\033[95m"
-	WARNING = "\033[93m"
-	FAIL = "\033[91m"
-	ENDC = "\033[0m"
+# Local repo modules
+from cli_colors import Colors
 
 #============================================
 LLM_LOG_PATH = os.path.join("output", "llm_responses.log")
@@ -211,14 +206,14 @@ def query_ollama_model(prompt: str, model_name: str) -> str:
 	Returns:
 		str: Model response (may be empty on error).
 	"""
-	print(f"{Colors.OKBLUE}Sending prompt to LLM with model {model_name}...{Colors.ENDC}")
+	print(f"{Colors.OKBLUE}Sending prompt to LLM with model {escape(model_name)}...{Colors.ENDC}")
 	print(f"{Colors.WARNING}Waiting for response...{Colors.ENDC}")
 	command = ["ollama", "run", model_name, prompt]
 	start_time = time.time()
 	result = subprocess.run(command, capture_output=True, text=True)
 	elapsed = time.time() - start_time
 	if result.returncode != 0:
-		print(f"{Colors.FAIL}Ollama error: {result.stderr.strip()}{Colors.ENDC}")
+		print(f"{Colors.FAIL}Ollama error: {escape(result.stderr.strip())}{Colors.ENDC}")
 		return ""
 	output = result.stdout.strip()
 	print(
@@ -312,7 +307,7 @@ def run_llm(
 			)
 		except Exception as error:
 			error_text = str(error)
-			print(f"{Colors.FAIL}AFM error: {error}{Colors.ENDC}")
+			print(f"{Colors.FAIL}AFM error: {escape(error_text)}{Colors.ENDC}")
 	else:
 		resolved_model = resolved_model or select_ollama_model()
 		response = query_ollama_model(prompt, resolved_model)

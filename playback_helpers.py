@@ -6,6 +6,8 @@ import warnings
 # PIP3 modules
 warnings.filterwarnings("ignore", category=UserWarning, module="pkg_resources")
 import pygame
+from rich import print
+from rich.markup import escape
 
 # Local repo modules
 import audio_utils
@@ -18,7 +20,8 @@ def ensure_mixer_initialized() -> None:
 #============================================
 def play_song(song: audio_utils.Song) -> None:
 	ensure_mixer_initialized()
-	print(f"{audio_utils.Colors.OKGREEN}Playing song: {os.path.basename(song.path)}{audio_utils.Colors.ENDC}")
+	file_name = escape(os.path.basename(song.path))
+	print(f"{audio_utils.Colors.OKGREEN}Playing song: {file_name}{audio_utils.Colors.ENDC}")
 	pygame.mixer.music.load(song.path)
 	pygame.mixer.music.play()
 

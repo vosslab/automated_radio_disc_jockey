@@ -28,10 +28,46 @@
 - Remove negative phrasing from LLM prompts.
 - Update intro opening guidance to emphasize audience engagement.
 - Restore "non-repetitive" wording in LLM prompts per preference.
+- Tell the LLM to use Wikipedia details only when they clearly match the song metadata.
+- Make next-song selector reasons human-readable and keep numeric scores internal.
+- Retry next-song selection when the LLM reason is placeholder or score shorthand, requiring runner-up filenames in readable reasons.
+- Remove numeric scoring from the next-song selector prompt and add a local fallback reason when the LLM reason is unusable.
+- Drop runner-up filenames from next-song selection reasons and simplify reason formatting.
+- Add optional live LLM smoke tests for next-song selection and DJ intro generation gated by env vars.
+- Require 3-sentence next-song selection reasons and add a 3-sentence fallback reason.
+- Add whisper.cpp-based audio transcription module and lyrics injection into DJ intro prompts.
+- Skip lyric transcription when `ffmpeg` or `whisper-cli` are missing from PATH.
+- Ask for interesting or unique facts in DJ intro prompts and bias intro referee toward those details.
+- Expand boilerplate stripping to drop generic "Hey there, Disney fans..." openers.
+- Add Brewfile entries for `whisper-cpp` to support lyric transcription.
+- Generate temporary WAV files via pygame for playback (stereo) and transcription (mono), without caching.
+- Limit lyric text to ASCII with a size cap in prompts, using more aggressive ASCII normalization.
+- Avoid whisper-cli Unicode decode crashes by using error-tolerant subprocess decoding.
+- Remove the `transcribe_audio.py` shebang since it is not a standalone script.
+- Always run a cleanup LLM pass on DJ intros to reduce fluff before validation.
+- Require the cleanup LLM to return a <response> block and strip any leading helper text.
+- Drop audio resampling and accept the pygame mixer sample rate for temp WAV generation.
+- Revert playback to load the original audio file directly instead of temp WAVs.
+- Reduce CLI color variety by mapping cyan/magenta to the standard info blue.
+- Log raw and sanitized lyric character counts when building DJ intro prompts.
+- Refine intro referee reasoning to avoid generic justifications and cite distinctive details.
+- Relax cleanup LLM instruction by removing the "output only" constraint on the <response> tag.
+- Replace ANSI color codes with rich markup output and escape dynamic text in CLI messages.
+- Centralize CLI color tokens in `cli_colors.py` to reduce duplication.
+- Log before/after intro stats (chars, words, sentences) for the LLM cleanup pass.
+- Ask the cleanup LLM to reduce intro length by about 25 percent.
+- Strip generic phrasing from intro referee reasons before printing.
+- Remove negative phrasing from the intro referee prompt and replace it with positive guidance.
+- Add `docs/PROMPT_COLOR_CATEGORIES.md` to standardize CLI color usage.
+- Constrain intro referee to judge only the option text and cite phrases that appear in it.
 - Update docs to reference `pip_requirements.txt` after renaming dependencies file.
 - Format spoken DJ intro output with borders, indentation, and color in terminal output.
 - Use `rich` for DJ intro terminal formatting.
 - Add `rich` to `pip_requirements.txt`.
+- Render DJ introductions in a double-line Rich panel and print the `[say]` command line without panel styling.
+- Fix Wikipedia lookup logging to use shared `Colors` constants after centralizing CLI colors.
+- Remove the stray shebang from `audio_wav.py` and replace `audioop` usage with a local channel-conversion helper to satisfy lint checks.
+- Map CLI colors to the RGB hex palette and use TEAL for lyric character stats output.
 
 ## 2026-02-03
 - Replace the wikipedia package with direct API calls and remove the BeautifulSoup dependency.
