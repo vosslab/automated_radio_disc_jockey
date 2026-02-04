@@ -15,6 +15,14 @@ try:
 except ImportError:
 	pyttsx3 = None
 from gtts import gTTS
+try:
+	from rich.console import Console
+	from rich.panel import Panel
+	RICH_CONSOLE = Console()
+except ImportError:
+	Console = None
+	Panel = None
+	RICH_CONSOLE = None
 
 DEFAULT_ENGINE = "say"
 TTS_VOLUME_GAIN = 1.15
@@ -96,6 +104,22 @@ def _strip_boilerplate_intro(text: str) -> str:
 		return ""
 	pattern = r"^\s*ladies and gentlemen,?\s*welcome to[^.!?]*[.!?]\s*"
 	return re.sub(pattern, "", text, flags=re.IGNORECASE).lstrip()
+
+#============================================
+def _print_say_command(command: list[str], text: str, show_text: bool = False) -> None:
+	command_prefix = " ".join(command[:-1] if command and text and command[-1] == text else command)
+	if RICH_CONSOLE and Panel:
+		body_lines = [
+			"[say] running:",
+			f"   {command_prefix}",
+		]
+		if show_text and text:
+			formatted_text = text.replace("\n", "\n   ")
+			body_lines.append(f"   {formatted_text}")
+		panel_text = "\n".join(body_lines)
+		RICH_CONSOLE.print(Panel(panel_text, style="yellow"))
+	else:
+		print(f"[say] running: {command_prefix}")
 
 #============================================
 def _insert_pacing_linebreaks(text: str) -> str:
@@ -250,7 +274,7 @@ def text_to_speech_say(text: str, speed: float) -> str:
 		raw_aiff,
 		text,
 	]
-	print(f"[say] running: {' '.join(command)}")
+	_print_say_command(command, text)
 	try:
 		subprocess.run(command, check=True)
 	except FileNotFoundError as error:

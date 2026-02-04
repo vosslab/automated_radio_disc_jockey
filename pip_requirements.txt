@@ -1,6 +1,7 @@
 gtts
 mutagen
 pygame
+rich
 #py3-tts<=3.4
 #pyttsx3
 # Apple Foundation Models backend (macOS 26+ with Apple Intelligence)

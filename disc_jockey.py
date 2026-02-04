@@ -9,6 +9,7 @@ import re
 import random
 
 # PIP3 modules
+from rich.console import Console
 
 # Local repo modules
 import audio_utils
@@ -34,6 +35,7 @@ class Colors:
 
 #============================================
 MAX_NEXT_SONG_ATTEMPTS = 5
+RICH_CONSOLE = Console()
 
 #============================================
 class HistoryLogger:
@@ -227,8 +229,13 @@ class DiscJockey:
 				print(f"{Colors.WARNING}Intro generation failed; will retry if attempts remain.{Colors.ENDC}")
 
 		if intro_text:
-			print(f"{Colors.BOLD}{Colors.OKMAGENTA}DJ Introduction:{Colors.ENDC}")
-			print(f"{Colors.OKCYAN}{intro_text}{Colors.ENDC}")
+			border = "=" * 14
+			display_text = tts_helpers.format_intro_for_tts(intro_text) or intro_text
+			RICH_CONSOLE.print("DJ Introduction:", style="bold magenta")
+			RICH_CONSOLE.print(border, style="magenta")
+			for line in display_text.splitlines() or [""]:
+				RICH_CONSOLE.print(f"   {line}", style="cyan")
+			RICH_CONSOLE.print(border, style="magenta")
 			try:
 				tts_helpers.speak_dj_intro(intro_text, self.args.tts_speed, engine=self.args.tts_engine)
 			except Exception as error:

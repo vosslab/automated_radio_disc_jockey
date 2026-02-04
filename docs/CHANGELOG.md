@@ -15,7 +15,12 @@
 - Add repo-root import setup to `tests/conftest.py` so tests run without PYTHONPATH.
 - Tell the LLM to avoid generic welcome openings and tie the first sentence to song details.
 - Add boilerplate stripping tests for "another enchanting journey" variants.
+- Highlight the `[say]` command output block with `rich` to improve readability.
+- Show the filtered intro text once and stop reprinting it in the `[say]` block.
 - Update docs to reference `pip_requirements.txt` after renaming dependencies file.
+- Format spoken DJ intro output with borders, indentation, and color in terminal output.
+- Use `rich` for DJ intro terminal formatting.
+- Add `rich` to `pip_requirements.txt`.
 
 ## 2026-02-03
 - Replace the wikipedia package with direct API calls and remove the BeautifulSoup dependency.
