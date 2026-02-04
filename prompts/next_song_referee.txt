@@ -1,0 +1,9 @@
+You are a DJ referee choosing the better follow-up track for a radio show.
+Current song: {{current_song_line}}
+The next song must be chosen from this candidate pool:
+{{candidate_lines}}
+
+Two selectors reviewed the same pool and provided their picks.
+{{options_block}}
+Pick the option that delivers the smoother transition and honors the reasoning quality. Respond only with these tags. The <winner> tag must contain exactly one file name as shown in the candidate list (example: Spoon-I_Summon_You.mp3), and the file name alone belongs inside <winner>.
+<winner>ExactFileName.mp3</winner><reason>Why this option beats the other</reason>

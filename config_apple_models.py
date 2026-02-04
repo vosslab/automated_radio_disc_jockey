@@ -12,7 +12,6 @@ import time
 
 from applefoundationmodels import Session, apple_intelligence_available
 
-
 MIN_MACOS_MAJOR = 26
 
 
@@ -74,10 +73,7 @@ def unit_test():
 	num1 = random.randint(10, 99)
 	num2 = random.randint(10, 99)
 	expected_answer = num1 + num2
-	prompt = (
-		f"What is {num1} + {num2}? "
-		"Provide just the integer answer with no punctuation or explanation."
-	)
+	prompt = f"What is {num1} + {num2}? Provide just the integer answer with no punctuation or explanation."
 	response = run_apple_model(prompt)
 	try:
 		ai_answer = int(response.strip())
@@ -112,11 +108,7 @@ def run_apple_model(
 	"""
 	_require_apple_intelligence()
 	last_error: Exception | None = None
-	default_instructions = (
-		"Follow the prompt precisely. "
-		"If the prompt requests XML tags, output only those tags and nothing else."
-	)
-	session_instructions = instructions or default_instructions
+	session_instructions = instructions if instructions is not None else ""
 
 	for attempt in range(1, max_retries + 1):
 		start_time = time.time()

@@ -24,6 +24,7 @@ import song_details_to_dj_intro
 import playback_helpers
 import tts_helpers
 import transcribe_audio
+import prompt_loader
 
 #============================================
 MAX_NEXT_SONG_ATTEMPTS = 5
@@ -53,6 +54,9 @@ def parse_args() -> argparse.Namespace:
 	parser.add_argument("-r", "--tts-speed", dest="tts_speed", type=float, default=1.2, help="Playback speed multiplier for the DJ intro.")
 	parser.add_argument("--tts-engine", choices=["say", "gtts", "pyttsx3"], default="say", help="TTS engine to use for DJ intros (default: macOS say).")
 	parser.add_argument("-t", "--testing", dest="testing", action="store_true", help="Testing mode: play only the first 20 seconds of each song.")
+	parser.add_argument("--show-intro-cleanup", dest="show_intro_cleanup", action="store_true", help="Print before/after intro text during LLM cleanup.")
+	parser.add_argument("--hide-intro-cleanup", dest="show_intro_cleanup", action="store_false", help="Hide before/after intro text during LLM cleanup.")
+	parser.set_defaults(show_intro_cleanup=False)
 	return parser.parse_args()
 
 #============================================
@@ -69,6 +73,7 @@ class DiscJockey:
 		self.history = HistoryLogger()
 		self.model_name = llm_wrapper.get_default_model_name()
 		tts_helpers.DEFAULT_ENGINE = args.tts_engine
+		self.show_intro_cleanup = args.show_intro_cleanup
 
 	#============================================
 	def log_intro(self, song: audio_utils.Song, intro: str) -> None:
@@ -364,8 +369,8 @@ class DiscJockey:
 					prev_song=prev_song,
 					model_name=self.model_name,
 					details_text=details_text,
-					strict_reminder=(attempt > 0),
 					lyrics_text=lyrics_text,
+					show_cleanup=self.show_intro_cleanup,
 				)
 				if not intro:
 					print(f"{Colors.WARNING}Intro option {label} attempt {attempt + 1} rejected: empty intro{Colors.ENDC}")
@@ -415,6 +420,7 @@ class DiscJockey:
 				best_intro,
 				song,
 				self.model_name,
+				show_cleanup=self.show_intro_cleanup,
 			)
 			return polished or best_intro
 
@@ -429,35 +435,24 @@ class DiscJockey:
 		candidates: list[tuple[str, str]],
 		details_text: str,
 	) -> str:
-		prompt = ""
-		prompt += "You are judging two DJ introductions for the same song.\n"
-		prompt += "Pick the intro that sounds natural, uses concrete facts from the song details, "
-		prompt += "and creates a smooth handoff from the previous track.\n"
-		prompt += "Use only the text shown in each option. Treat each option as the complete intro.\n"
-		prompt += "Base your judgment and reason on phrases that appear in the option text.\n"
-		prompt += "Prefer intros that highlight interesting or unique facts with vivid context.\n"
-		prompt += "In the reason, cite the most distinctive detail that makes the winner better.\n"
-		prompt += "Use concrete phrasing tied to the option text.\n"
-		prompt += "\nValidity rules: an option that includes 'FACT:' or 'TRIVIA:' in the intro text is invalid. "
-		prompt += "An option with fewer than 3 sentences is invalid.\n"
-		prompt += "Prefer options that mention the song title when it fits naturally.\n"
-		prompt += "Choose based on quality and naturalness, with brevity as a secondary factor.\n"
-		prompt += "(***) Current song summary:\n"
-		prompt += song.one_line_info() + "\n"
-		if prev_song:
-			prompt += "(***) Previous song summary:\n"
-			prompt += prev_song.one_line_info() + "\n"
-		prompt += "(***) Authoritative song info:\n"
-		prompt += details_text + "\n"
-
+		options_block = ""
 		for label, text in candidates:
-			prompt += f"\nOption {label} intro:\n{text}\n"
+			options_block += f"\nOption {label} intro:\n{text}\n"
 
-		prompt += (
-			"\nRespond ONLY with these XML tags on a single line. "
-			"The <winner> tag must contain only the letter A or B (no extra words). "
-			"The <reason> must be 1-2 sentences (max 40 words). "
-			"<winner>A or B</winner><reason>Explain why that intro is better.</reason>\n"
+		previous_section = ""
+		if prev_song:
+			previous_section = "(***) Previous song summary:\n"
+			previous_section += prev_song.one_line_info() + "\n"
+
+		template = prompt_loader.load_prompt("dj_intro_referee.txt")
+		prompt = prompt_loader.render_prompt(
+			template,
+			{
+				"current_song_summary": song.one_line_info(),
+				"previous_song_section": previous_section,
+				"details_text": details_text,
+				"options_block": options_block,
+			},
 		)
 
 		raw = llm_wrapper.run_llm(prompt, model_name=self.model_name)
@@ -536,7 +531,7 @@ class DiscJockey:
 
 		max_attempts = 2
 		for attempt in range(max_attempts):
-			prompt = self._build_referee_prompt(current_song, candidate_lines, results, attempt > 0)
+			prompt = self._build_referee_prompt(current_song, candidate_lines, results)
 			raw = llm_wrapper.run_llm(prompt, model_name=self.model_name)
 			raw_output = raw.strip() if raw else ""
 			winner_text = llm_wrapper.extract_xml_tag(raw, "winner")
@@ -563,40 +558,33 @@ class DiscJockey:
 		current_song: audio_utils.Song,
 		candidate_lines: list[str],
 		results: list[tuple[str, next_song_selector.SelectionResult]],
-		strict_reminder: bool,
 	) -> str:
-		prompt = "You are a DJ referee choosing the better follow-up track for a radio show.\n"
-		prompt += (
-			f"Current song: {os.path.basename(current_song.path)} | "
-			f"Artist: {current_song.artist} | Album: {current_song.album} | Title: {current_song.title}\n"
-		)
-		prompt += "The next song must be chosen from this candidate pool:\n"
-		prompt += "\n".join(candidate_lines)
-		prompt += "\n\nTwo selectors reviewed the same pool and provided their picks.\n"
+		options_block = ""
 		for label, result in results:
 			if not result.song:
-				prompt += f"\nOption {label}: No selection returned.\n"
+				options_block += f"\nOption {label}: No selection returned.\n"
 				continue
 			target = result.song
 			reason_text = result.reason.strip() if result.reason else "No reasoning provided."
-			prompt += (
+			options_block += (
 				f"\nOption {label}: {os.path.basename(target.path)} | Artist: {target.artist} | Album: {target.album}\n"
 				f"Selector rationale:\n{reason_text}\n"
 			)
 
-		prompt += (
-			"\nPick the option that delivers the smoother transition and honors the reasoning quality. "
-			"Respond only with these tags. "
-			"The <winner> tag must contain exactly one file name as shown in the candidate list "
-			"(example: Spoon-I_Summon_You.mp3), and the file name alone belongs inside <winner>.\n"
-			"<winner>ExactFileName.mp3</winner>"
-			"<reason>Why this option beats the other</reason>\n"
+		current_song_line = (
+			f"{os.path.basename(current_song.path)} | "
+			f"Artist: {current_song.artist} | Album: {current_song.album} | Title: {current_song.title}"
 		)
-		if strict_reminder:
-			prompt += (
-				"\nReminder: Include both <winner> and <reason> tags and keep the reply to those tags.\n"
-			)
-		return prompt
+
+		template = prompt_loader.load_prompt("next_song_referee.txt")
+		return prompt_loader.render_prompt(
+			template,
+			{
+				"current_song_line": current_song_line,
+				"candidate_lines": "\n".join(candidate_lines),
+				"options_block": options_block,
+			},
+		)
 
 	#============================================
 	def _log_referee_failure(self, winner_text: str, ref_reason: str, raw_output: str) -> None:

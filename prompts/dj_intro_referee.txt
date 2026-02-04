@@ -1,0 +1,17 @@
+You are judging two DJ introductions for the same song.
+Pick the intro that sounds natural, uses concrete facts from the song details, and creates a smooth handoff from the previous track.
+Use only the text shown in each option. Treat each option as the complete intro.
+Base your judgment and reason on phrases that appear in the option text.
+Prefer intros that highlight interesting or unique facts with vivid context.
+In the reason, cite the most distinctive detail that makes the winner better.
+Use concrete phrasing tied to the option text.
+
+Validity rules: an option that includes 'FACT:' or 'TRIVIA:' in the intro text is invalid. An option with fewer than 3 sentences is invalid.
+Prefer options that mention the song title when it fits naturally.
+Choose based on quality and naturalness, with brevity as a secondary factor.
+(***) Current song summary:
+{{current_song_summary}}
+{{previous_song_section}}(***) Authoritative song info:
+{{details_text}}
+{{options_block}}
+Respond ONLY with these XML tags on a single line. The <winner> tag must contain only the letter A or B (no extra words). The <reason> must be 1-2 sentences (max 40 words). <winner>A or B</winner><reason>Explain why that intro is better.</reason>

@@ -16,6 +16,7 @@ import audio_utils
 import audio_file_to_details
 import llm_wrapper
 import transcribe_audio
+import prompt_loader
 
 #============================================
 #============================================
@@ -261,31 +262,20 @@ def _refine_intro_with_llm(
 	song: audio_utils.Song,
 	model_name: str | None,
 	reason: str,
+	show_cleanup: bool = False,
 ) -> str | None:
 	if not text:
 		return None
-	prompt = (
-		"Your nickname is the 'fluff reducer'"
-		"You are tasked trimming a DJ intro to fix issues and reduce fluff. "
-		"Use only the provided facts and rephrase the text. "
-		"Use plain text with simple formatting. "
-		"Keep it lively and non-repetitive. "
-		"Many intros contain nonsense at the beginning "
-		" rather than getting into the content. Please streamline the content. "
-		"The audience does not need to hear a list of names or lame awards, they want "
-		"interesting content, so scrap the fluff the pull out the diamonds. "
-		"Start with a song-specific line to get the audience engaged immediately. "
-		"Trim filler phrases and focus on the most distinctive details. "
-		"Aim to reduce the length by about 25-50 percent. "
-		"Try and compress the text to reduce redundant content and repeat phrases. "
-		"Summarize, compress, drop boring names, remove repeated content, "
-		"and get to meat of the intro quicker. "
-		"Like do we really need to say 'Ladies and gentlemen' for every intro, NO! "
-		"We are in the middle of your play set, so please do not welcome your audience again. "
-		"Wrap only the revised intro inside <response>...</response>.\n\n"
-		f"Issue: {reason}\n"
-		"Here is the extended Intro text:\n"
-		f"<intro text>{text}</intro text>\n"
+	if show_cleanup:
+		print(f"{Colors.OKMAGENTA}Intro before cleanup:{Colors.ENDC}")
+		print(f"{Colors.WHITE}{escape(text)}{Colors.ENDC}")
+	template = prompt_loader.load_prompt("dj_intro_refine.txt")
+	prompt = prompt_loader.render_prompt(
+		template,
+		{
+			"issue": reason,
+			"intro_text": text,
+		},
 	)
 	refined = llm_wrapper.run_llm(prompt, model_name=model_name)
 	if not refined:
@@ -300,6 +290,12 @@ def _refine_intro_with_llm(
 		flags=re.IGNORECASE,
 	).strip()
 	candidate = candidate.strip("\"'").strip()
+	if show_cleanup:
+		if candidate:
+			print(f"{Colors.OKMAGENTA}Intro after cleanup:{Colors.ENDC}")
+			print(f"{Colors.WHITE}{escape(candidate)}{Colors.ENDC}")
+		else:
+			print(f"{Colors.WARNING}Cleanup LLM returned empty output; keeping original intro.{Colors.ENDC}")
 	return candidate or None
 
 #============================================
@@ -307,6 +303,7 @@ def polish_intro_for_reading(
 	intro_text: str,
 	song: audio_utils.Song,
 	model_name: str | None,
+	show_cleanup: bool = False,
 ) -> str | None:
 	"""
 	Run a final LLM cleanup pass after the referee selects an intro.
@@ -321,6 +318,7 @@ def polish_intro_for_reading(
 		song,
 		model_name,
 		"final pass before playback",
+		show_cleanup=show_cleanup,
 	)
 	if refined:
 		after_chars, after_words, after_sentences = _intro_stats(refined)
@@ -501,9 +499,9 @@ def prepare_intro_text(
 	prev_song: audio_utils.Song | None = None,
 	model_name: str | None = None,
 	details_text: str | None = None,
-	strict_reminder: bool = False,
 	allow_fallback: bool = True,
 	lyrics_text: str | None = None,
+	show_cleanup: bool = False,
 ) -> str | None:
 	"""
 	Build a DJ prompt for a song, query the LLM, and extract the intro text.
@@ -532,19 +530,6 @@ def prepare_intro_text(
 		details_text=details_text,
 		lyrics_text=lyrics_text,
 	)
-	if strict_reminder:
-		prompt += "\n(**) IMPORTANT VALIDATION RULES:\n"
-		prompt += "- Put the FACT/TRIVIA lines inside <facts>...</facts>, outside <response>.\n"
-		prompt += "- The <response> must contain ONLY the final spoken intro.\n"
-		prompt += "- Craft an interesting narrative for your radio show audience.\n"
-		prompt += "- Pull in unique and interesting facts for your response.\n"
-		prompt += "- Think of yourself as a DJ at the top of their craft and engagement.\n"
-		prompt += "- Did something inspire the lyrics of the song.\n"
-		prompt += "- Do the lyrics inspire any thoughts or unique ideas.\n"
-		prompt += "- The <response> must be 3-7 sentences and at least 200 characters.\n"
-		prompt += f"- Aim for {TARGET_SENTENCE_MIN}-{TARGET_SENTENCE_MAX} sentences.\n"
-		prompt += "- The <response> contains only the intro text; FACT/TRIVIA lines belong in <facts>.\n"
-		prompt += "- Output only <facts> and <response> tags, nothing else.\n"
 
 	print(f"{Colors.SKY_BLUE}Sending prompt to LLM...{Colors.ENDC}")
 	dj_intro = llm_wrapper.run_llm(prompt, model_name=model_name)
@@ -577,6 +562,7 @@ def prepare_intro_text(
 			song,
 			model_name,
 			"polish for clarity and remove filler",
+			show_cleanup=show_cleanup,
 		)
 		if refined_intro:
 			after_chars, after_words, after_sentences = _intro_stats(refined_intro)
@@ -627,22 +613,6 @@ def build_prompt(
 	Raises:
 		ValueError: If neither raw_text nor usable metadata is available.
 	"""
-	base = (
-		"(**) You are a charismatic radio DJ. "
-		"Keep the intro natural and conversational. "
-		"Focus on song and artist details, particular specific facts. "
-		"Use plain human readable sentences with standard punctuation and ascii/ISO 8859-1 characters. "
-		"You must base your intro on concrete facts from the Song details section. "
-		"Keep it lively and non-repetitive. "
-		"Use plain text with simple formatting. "
-		"Open with a song-specific line to get the audience engaged immediately. "
-		"Make the first sentence tie directly to the song details. "
-		"Prefer human and creative context over statistics. "
-		"Use only facts supported by the Song details. "
-		"Use Wikipedia-derived details only when they clearly match the song title, artist, and album. "
-		"When details feel mismatched, lean on the file summary and confirmed metadata. "
-	)
-
 	if not raw_text and not song:
 		raise ValueError("build_prompt requires raw_text or a valid song with metadata.")
 
@@ -654,43 +624,20 @@ def build_prompt(
 			details_text = fetch_song_details(song)
 		details_intro = "Use the details below about the song. Treat them as authoritative.\n\n"
 
-	ending = (
-		"\n\n(**) First, write exactly five lines that each start with 'FACT: ' or 'TRIVIA: '. "
-		"Each FACT/TRIVIA line must contain an interesting or unique factual detail drawn from the Song details. "
-		"Prioritize personal or creative context over charts or awards, such as: "
-		"how or why the song was written, stories from recording, changes in the band's sound, "
-		"lyrical themes, tensions or milestones for the band, or how it fits into the album. "
-		"Pick details that feel distinctive or revealing for this specific song. "
-		"Wrap those five lines inside <facts>...</facts> tags. "
-		"\n(**) After the <facts> block, write the final spoken intro. "
-		"In the intro, weave in at least two of the facts you listed. "
-		"Make it sound like you are telling a brief story about the band around this track, "
-		"not reading a press release. "
-		"Write the intro with a sense of rise and fall. Begin with a lively opening line, "
-		"follow with a softer or more reflective line, then lift the energy again before "
-		"the final handoff to the song. "
-		"End by repeating the song title if it fits naturally, and feel free to mention the artist. "
-		"Keep the intro to 3-10 sentences, aiming for "
-		f"{TARGET_SENTENCE_MIN}-{TARGET_SENTENCE_MAX} sentences. "
-		"The <response> block must contain ONLY the final intro text. "
-		"Place FACT/TRIVIA lines only inside <facts> and keep <response> for the intro. "
-		"The <response> must be at least 200 characters. "
-		"Wrap the final spoken intro inside <response>...</response>. "
-		"Output only the <facts> and <response> tags."
-	)
-
-	prompt = base
-
+	file_summary_block = ""
+	file_summary_repeat = ""
 	if song:
-		prompt += "(**) Here is a brief file summary for context (do not read this verbatim on air):\n"
-		prompt += song.one_line_info() + "\n\n"
-	if prev_song:
-		prompt += "The previous song was (you may reference it briefly):\n"
-		prompt += prev_song.one_line_info() + "\n\n"
+		file_summary_block = "(**) Here is a brief file summary for context (do not read this verbatim on air):\n"
+		file_summary_block += song.one_line_info() + "\n\n"
+		file_summary_repeat = "Again here is a brief file summary.\n"
+		file_summary_repeat += song.one_line_info() + "\n\n"
 
-	prompt += details_intro
-	prompt += "Song details:\n"
-	prompt += details_text + "\n\n"
+	previous_song_block = ""
+	if prev_song:
+		previous_song_block = "The previous song was (you may reference it briefly):\n"
+		previous_song_block += prev_song.one_line_info() + "\n\n"
+
+	lyrics_block = ""
 	if lyrics_text:
 		clean_lyrics = _sanitize_lyrics_text(lyrics_text)
 		if clean_lyrics:
@@ -698,19 +645,23 @@ def build_prompt(
 				f"{Colors.TEAL}Lyrics chars (raw/clean): "
 				f"{len(lyrics_text)} / {len(clean_lyrics)}{Colors.ENDC}"
 			)
-			prompt += "Lyrics (auto-transcribed from audio; partial):\n"
-			prompt += clean_lyrics + "\n\n"
+			lyrics_block = "Lyrics (auto-transcribed from audio; partial):\n"
+			lyrics_block += clean_lyrics + "\n\n"
 
-	prompt += "Write a specific, concrete intro with small stories; "
-	prompt += "facts and small stories are more important than hype.\n"
-
-	if song:
-		prompt += "Again here is a brief file summary.\n"
-		prompt += song.one_line_info() + "\n\n"
-
-	prompt += ending + "\n\n"
-
-	return prompt
+	template = prompt_loader.load_prompt("dj_intro.txt")
+	return prompt_loader.render_prompt(
+		template,
+		{
+			"file_summary_block": file_summary_block,
+			"previous_song_block": previous_song_block,
+			"details_intro": details_intro,
+			"details_text": details_text,
+			"lyrics_block": lyrics_block,
+			"file_summary_repeat": file_summary_repeat,
+			"target_sentence_min": str(TARGET_SENTENCE_MIN),
+			"target_sentence_max": str(TARGET_SENTENCE_MAX),
+		},
+	)
 
 #============================================
 def fetch_song_details(song: audio_utils.Song) -> str:

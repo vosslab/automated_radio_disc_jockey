@@ -1,6 +1,10 @@
 # Changelog
 
 ## 2026-02-04
+- Remove default Apple Foundation Models instruction text and only use explicit instructions when provided.
+- Consolidate LLM prompt templates into five canonical files and drop strict reminder variants.
+- Add a disc jockey flag to print before/after intro text during the LLM cleanup pass.
+- Move LLM prompt text into editable files under prompts/ with a shared prompt loader.
 - Stop rejecting DJ intros that omit the artist name while still requiring the song title.
 - Allow DJ intros up to 10 sentences instead of 6.
 - Add relaxed intro fallback so TTS can proceed when strict validation rejects all options.

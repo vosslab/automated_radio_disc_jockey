@@ -15,6 +15,7 @@ from cli_colors import Colors
 import llm_wrapper
 import audio_utils
 from audio_utils import Song
+import prompt_loader
 
 #============================================
 #============================================
@@ -129,7 +130,7 @@ def build_fallback_reason(choice_text: str, chosen_song: Song | None, candidates
 	)
 
 #============================================
-def build_selection_prompt(current_song: Song, candidates: list[Song], strict_reason: bool = False) -> str:
+def build_selection_prompt(current_song: Song, candidates: list[Song]) -> str:
 	"""
 	Build the LLM prompt for next-song selection.
 	"""
@@ -137,36 +138,24 @@ def build_selection_prompt(current_song: Song, candidates: list[Song], strict_re
 	last_album = current_song.album.lower()
 	last_title = current_song.title.lower()
 
-	prompt = ""
-	prompt += "You are selecting the next track for a radio show. "
-	prompt += "\n(1) Consider genre, mood, energy, tempo, vocal style, era, and how smoothly the handoff will feel. "
-	prompt += "\n(2) From the candidates, identify the four best matches for the current song. "
-	prompt += "\n(3) Rank those four by how well they fit after the current track. "
-	prompt += "\n(4) After ranking the top four choices, choose the single best track as the next song. "
-	prompt += "\n(5) In your reasoning, write exactly 3 sentences (max 90 words). "
-	prompt += "Use normal words and complete sentences. "
-	prompt += "Explain why the pick fits the current track. "
-	prompt += "Mention at least one detail from the candidate list (artist, title, album, mood, tempo, or style). "
-	prompt += "\n(6) Use the file names exactly as shown in the candidate list. "
-	prompt += "\n(7) select the least jarring and the most 'this DJ knows what they are doing' choice."
-	prompt += "\n(8) Keep your output tightly structured and short."
-	prompt += "\n(9) Respond with these two specific XML tags for processing "
-	prompt += "<choice>FILENAME.mp3</choice>"
-	prompt += "<reason>Exactly three sentences explaining the pick.</reason>\n"
-	if strict_reason:
-		prompt += "\n(10) Use at least one artist, title, or album detail from the candidate list.\n"
-
-	prompt += (
-		f"Current song: {os.path.basename(current_song.path)} | "
-		f"Artist: {last_artist} | Album: {last_album} | Title: {last_title}\n"
+	current_song_line = (
+		f"{os.path.basename(current_song.path)} | "
+		f"Artist: {last_artist} | Album: {last_album} | Title: {last_title}"
 	)
-	prompt += "Candidates:\n"
+	candidate_lines = []
 	for song in candidates:
-		prompt += (
+		candidate_lines.append(
 			f"- {os.path.basename(song.path)} | "
-			f"Artist: {song.artist} | Album: {song.album} | Title: {song.title}\n"
+			f"Artist: {song.artist} | Album: {song.album} | Title: {song.title}"
 		)
-	return prompt
+	template = prompt_loader.load_prompt("next_song_selection.txt")
+	return prompt_loader.render_prompt(
+		template,
+		{
+			"current_song_line": current_song_line,
+			"candidate_lines": "\n".join(candidate_lines),
+		},
+	)
 
 #============================================
 def _candidate_key_variants(value: str) -> set[str]:
@@ -296,7 +285,7 @@ def choose_next_song(current_song: Song, song_list: list[str], sample_size: int,
 
 	if not is_reason_acceptable(reason, candidate_songs):
 		print(f"{Colors.WARNING}LLM reason was placeholder or shorthand; retrying for a readable explanation.{Colors.ENDC}")
-		retry_prompt = build_selection_prompt(current_song, candidate_songs, strict_reason=True)
+		retry_prompt = build_selection_prompt(current_song, candidate_songs)
 		raw_retry = llm_wrapper.run_llm(retry_prompt, model_name=model_name)
 		raw_choice_retry = llm_wrapper.extract_xml_tag(raw_retry, "choice")
 		choice_retry = clean_llm_choice(raw_choice_retry)
