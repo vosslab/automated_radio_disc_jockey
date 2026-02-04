@@ -15,6 +15,7 @@
 - Add repo-root import setup to `tests/conftest.py` so tests run without PYTHONPATH.
 - Tell the LLM to avoid generic welcome openings and tie the first sentence to song details.
 - Add boilerplate stripping tests for "another enchanting journey" variants.
+- Update docs to reference `pip_requirements.txt` after renaming dependencies file.
 
 ## 2026-02-03
 - Replace the wikipedia package with direct API calls and remove the BeautifulSoup dependency.
