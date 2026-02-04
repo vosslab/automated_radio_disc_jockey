@@ -419,7 +419,7 @@ class DiscJockey:
 		prompt += "\nDisqualifying rules: if an option includes 'FACT:' or 'TRIVIA:' in the intro text, "
 		prompt += "or is fewer than 3 sentences, it must lose.\n"
 		prompt += "Prefer options that mention the song title when it fits naturally.\n"
-		prompt += "Do not prefer an option just because it is shorter.\n"
+		prompt += "Choose based on quality and naturalness, with brevity as a secondary factor.\n"
 		prompt += "(***) Current song summary:\n"
 		prompt += song.one_line_info() + "\n"
 		if prev_song:
@@ -547,16 +547,15 @@ class DiscJockey:
 
 		prompt += (
 			"\nPick the option that delivers the smoother transition and honors the reasoning quality. "
-			"Respond only with these tags (no narration, no markdown, no extra text). "
+			"Respond only with these tags. "
 			"The <winner> tag must contain exactly one file name as shown in the candidate list "
-			"(example: Spoon-I_Summon_You.mp3). Do not add artist names or album titles inside the tag.\n"
+			"(example: Spoon-I_Summon_You.mp3), and the file name alone belongs inside <winner>.\n"
 			"<winner>ExactFileName.mp3</winner>"
 			"<reason>Why this option beats the other</reason>\n"
 		)
 		if strict_reminder:
 			prompt += (
-				"\nReminder: You must include both <winner> and <reason> tags. "
-				"Any other formatting is invalid, so be precise.\n"
+				"\nReminder: Include both <winner> and <reason> tags and keep the reply to those tags.\n"
 			)
 		return prompt
 

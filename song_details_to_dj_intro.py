@@ -60,6 +60,7 @@ TITLE_STOPWORDS = {
 	"volume",
 	"with",
 }
+MAX_REFINE_ATTEMPTS = 1
 
 #============================================
 def parse_args() -> argparse.Namespace:
@@ -99,6 +100,113 @@ def _normalize_sentence(text: str) -> str:
 	normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
 	normalized = re.sub(r"\s+", " ", normalized).strip()
 	return normalized
+
+#============================================
+def _strip_code_fences(text: str) -> str:
+	if not text:
+		return ""
+	text = re.sub(r"```[a-z0-9]*\s*(.*?)```", r"\1", text, flags=re.IGNORECASE | re.DOTALL)
+	text = re.sub(r"```", " ", text)
+	return text.replace("`", " ")
+
+#============================================
+def _starts_with_boilerplate(text: str) -> bool:
+	if not text:
+		return False
+	pattern = r"^\s*ladies and gentlemen,?\s*welcome to"
+	return re.match(pattern, text, flags=re.IGNORECASE) is not None
+
+#============================================
+def _strip_leading_boilerplate_sentence(text: str) -> str:
+	if not text:
+		return ""
+	if not _starts_with_boilerplate(text):
+		return text
+	match = re.search(r"[.!?]\s+", text)
+	if match:
+		return text[match.end():].lstrip()
+	return ""
+
+#============================================
+def _finalize_intro_text(
+	text: str,
+	song: audio_utils.Song,
+	model_name: str | None,
+	allow_refine: bool,
+	reason_hint: str = "",
+) -> str | None:
+	if not text:
+		return None
+	clean_intro = _strip_code_fences(text).strip()
+	if not clean_intro:
+		return None
+	lowered = clean_intro.lower()
+	if "fact:" in lowered or "trivia:" in lowered:
+		return _refine_or_none(clean_intro, song, model_name, allow_refine, "contains FACT/TRIVIA")
+	if "<" in clean_intro and ">" in clean_intro:
+		return _refine_or_none(clean_intro, song, model_name, allow_refine, "contains markup")
+	if len(clean_intro) > MAX_INTRO_CHARS:
+		return _refine_or_none(clean_intro, song, model_name, allow_refine, "too long")
+	if _starts_with_boilerplate(clean_intro):
+		clean_intro = _strip_leading_boilerplate_sentence(clean_intro)
+		if not clean_intro:
+			return _refine_or_none(text, song, model_name, allow_refine, "boilerplate opening")
+	sentence_count = _estimate_sentence_count(clean_intro)
+	if sentence_count < MIN_INTRO_SENTENCES or sentence_count > MAX_INTRO_SENTENCES:
+		return _refine_or_none(clean_intro, song, model_name, allow_refine, "sentence count out of range")
+	if _has_excessive_repetition(clean_intro):
+		return _refine_or_none(clean_intro, song, model_name, allow_refine, "repetition")
+
+	if not _title_is_mentioned(clean_intro, song.title or ""):
+		print(f"{Colors.WARNING}Intro missing song title; allowing output.{Colors.ENDC}")
+		if song.title:
+			amended = _append_title_if_missing(clean_intro, song.title)
+			if len(amended) <= MAX_INTRO_CHARS:
+				clean_intro = amended
+
+	return clean_intro
+
+#============================================
+def _refine_or_none(
+	text: str,
+	song: audio_utils.Song,
+	model_name: str | None,
+	allow_refine: bool,
+	reason: str,
+) -> str | None:
+	if not allow_refine:
+		return None
+	refined = _refine_intro_with_llm(text, song, model_name, reason)
+	if refined:
+		return _finalize_intro_text(refined, song, model_name, False, reason_hint=reason)
+	return None
+
+#============================================
+def _refine_intro_with_llm(
+	text: str,
+	song: audio_utils.Song,
+	model_name: str | None,
+	reason: str,
+) -> str | None:
+	if not text:
+		return None
+	prompt = (
+		"You are rewriting a DJ intro to fix issues. "
+		"Use only the provided facts and rephrase the text. "
+		"Use plain text with simple formatting. "
+		"Keep it lively and non-repetitive. "
+		"Start with a song-specific line to get the audience engaged immediately. "
+		"Keep it to 5-7 sentences. "
+		"Return only the revised intro text.\n\n"
+		f"Issue: {reason}\n"
+		"Intro text:\n"
+		f"{text}\n"
+	)
+	refined = llm_wrapper.run_llm(prompt, model_name=model_name)
+	if not refined:
+		return None
+	refined = _strip_code_fences(refined)
+	return refined.strip() or None
 
 #============================================
 def _title_tokens(title: str) -> list[str]:
@@ -200,7 +308,8 @@ def _trim_intro(text: str, max_len: int) -> str:
 def _sanitize_intro_text(text: str) -> str:
 	if not text:
 		return ""
-	cleaned = re.sub(r"<facts[^>]*>.*?</facts[^>]*>", " ", text, flags=re.IGNORECASE | re.DOTALL)
+	cleaned = _strip_code_fences(text)
+	cleaned = re.sub(r"<facts[^>]*>.*?</facts[^>]*>", " ", cleaned, flags=re.IGNORECASE | re.DOTALL)
 	cleaned = re.sub(r"</?facts[^>]*>", " ", cleaned, flags=re.IGNORECASE)
 	cleaned = re.sub(r"</?response[^>]*>", " ", cleaned, flags=re.IGNORECASE)
 	cleaned = re.sub(r"<[^>]+>", " ", cleaned)
@@ -236,8 +345,12 @@ def _build_relaxed_intro(raw_text: str, song: audio_utils.Song) -> str | None:
 	cleaned = _sanitize_intro_text(raw_text)
 	if not cleaned:
 		return None
+	if _starts_with_boilerplate(cleaned):
+		return None
 	cleaned = _append_title_if_missing(cleaned, song.title or "")
 	cleaned = _trim_intro(cleaned, MAX_INTRO_CHARS)
+	if _has_excessive_repetition(cleaned):
+		return None
 	if len(cleaned.split()) < MIN_RELAXED_WORDS:
 		return None
 	if _estimate_sentence_count(cleaned) < MIN_RELAXED_SENTENCES:
@@ -279,7 +392,7 @@ def prepare_intro_text(
 		prompt += "- The <response> must contain ONLY the final spoken intro.\n"
 		prompt += "- The <response> must be 3-10 sentences and at least 200 characters.\n"
 		prompt += f"- Aim for {TARGET_SENTENCE_MIN}-{TARGET_SENTENCE_MAX} sentences.\n"
-		prompt += "- Do not include the strings 'FACT:' or 'TRIVIA:' inside <response>.\n"
+		prompt += "- The <response> contains only the intro text; FACT/TRIVIA lines belong in <facts>.\n"
 		prompt += "- Output only <facts> and <response> tags, nothing else.\n"
 
 	print(f"{Colors.OKBLUE}Sending prompt to LLM...{Colors.ENDC}")
@@ -298,78 +411,29 @@ def prepare_intro_text(
 	# Use the generic XML extractor for the response tag
 	facts_block = llm_wrapper.extract_xml_tag(dj_intro, "facts")
 	if not facts_block:
-		print(f"{Colors.WARNING}No <facts> block detected; rejecting output.{Colors.ENDC}")
-		relaxed_intro = _use_relaxed_intro("Missing <facts> block.")
-		if relaxed_intro:
-			return relaxed_intro
-		return None
+		print(f"{Colors.WARNING}No <facts> block detected; continuing anyway.{Colors.ENDC}")
 	facts_ok, facts_reason = _validate_facts_block(facts_block)
 	if not facts_ok:
-		print(f"{Colors.WARNING}Invalid <facts> block ({facts_reason}); rejecting output.{Colors.ENDC}")
-		relaxed_intro = _use_relaxed_intro("Invalid <facts> block.")
-		if relaxed_intro:
-			return relaxed_intro
-		return None
+		print(f"{Colors.WARNING}Invalid <facts> block ({facts_reason}); continuing anyway.{Colors.ENDC}")
 
 	clean_intro = llm_wrapper.extract_xml_tag(dj_intro, "response")
 
 	if clean_intro:
-		intro_length = len(clean_intro)
-		print(f"Extracted intro length: {intro_length} characters.")
-		if intro_length > MAX_INTRO_CHARS:
-			print(
-				f"{Colors.WARNING}Intro too long ({intro_length} chars); "
-				f"rejecting and retrying.{Colors.ENDC}"
-			)
-			relaxed_intro = _use_relaxed_intro("Intro too long.")
-			if relaxed_intro:
-				return relaxed_intro
-			return None
-		lowered = clean_intro.lower()
-		if "fact:" in lowered or "trivia:" in lowered:
-			print(f"{Colors.WARNING}Intro contains FACT/TRIVIA lines; rejecting output.{Colors.ENDC}")
-			relaxed_intro = _use_relaxed_intro("Intro contains FACT/TRIVIA lines.")
-			if relaxed_intro:
-				return relaxed_intro
-			return None
-		if "<" in clean_intro and ">" in clean_intro:
-			print(f"{Colors.WARNING}Intro contains markup; rejecting output.{Colors.ENDC}")
-			relaxed_intro = _use_relaxed_intro("Intro contains markup.")
-			if relaxed_intro:
-				return relaxed_intro
-			return None
-		sentence_count = _estimate_sentence_count(clean_intro)
-		if sentence_count < MIN_INTRO_SENTENCES or sentence_count > MAX_INTRO_SENTENCES:
-			print(
-				f"{Colors.WARNING}Intro sentence count out of range ({sentence_count}); "
-				f"rejecting output.{Colors.ENDC}"
-			)
-			relaxed_intro = _use_relaxed_intro("Intro sentence count out of range.")
-			if relaxed_intro:
-				return relaxed_intro
-			return None
-		if _has_excessive_repetition(clean_intro):
-			print(f"{Colors.WARNING}Intro repeats sentences; rejecting output.{Colors.ENDC}")
-			relaxed_intro = _use_relaxed_intro("Intro repeats sentences.")
-			if relaxed_intro:
-				return relaxed_intro
-			return None
-		if not _title_is_mentioned(clean_intro, song.title or ""):
-			print(f"{Colors.WARNING}Intro missing song title; allowing output.{Colors.ENDC}")
-			if allow_fallback and song.title:
-				amended = _append_title_if_missing(clean_intro, song.title)
-				if amended != clean_intro:
-					if len(amended) <= MAX_INTRO_CHARS:
-						clean_intro = amended
-					else:
-						print(f"{Colors.WARNING}Intro title append would exceed max length; keeping original.{Colors.ENDC}")
+		final_intro = _finalize_intro_text(clean_intro, song, model_name, allow_fallback)
+		if final_intro:
+			print(f"Extracted intro length: {len(final_intro)} characters.")
+			return final_intro
+		relaxed_intro = _use_relaxed_intro("Intro failed validation.")
+		if relaxed_intro:
+			return relaxed_intro
+		return None
 	else:
 		print("No <response> block detected; intro text will be empty.")
 		relaxed_intro = _use_relaxed_intro("No <response> block detected.")
 		if relaxed_intro:
 			return relaxed_intro
 
-	return clean_intro
+	return None
 
 #============================================
 def build_prompt(
@@ -395,13 +459,15 @@ def build_prompt(
 	base = (
 		"(**) You are a charismatic radio DJ. "
 		"Keep the intro natural and conversational. "
-		"Do not mention any city, town, or location. "
-		"Avoid brackets, parentheses, and em dashes. "
+		"Focus on song and artist details, particular specific facts. "
+		"Use plain human readable sentences with standard punctuation and ascii/ISO 8859-1 characters. "
 		"You must base your intro on concrete facts from the Song details section. "
-		"Do not open with 'Ladies and gentlemen' or a generic welcome-to-the-show line. "
+		"Keep it lively and non-repetitive. "
+		"Use plain text with simple formatting. "
+		"Open with a song-specific line to get the audience engaged immediately. "
 		"Make the first sentence tie directly to the song details. "
 		"Prefer human and creative context over statistics. "
-		"Do not invent facts that are not supported by the Song details. "
+		"Use only facts supported by the Song details. "
 	)
 
 	if not raw_text and not song:
@@ -434,10 +500,10 @@ def build_prompt(
 		"Keep the intro to 3-10 sentences, aiming for "
 		f"{TARGET_SENTENCE_MIN}-{TARGET_SENTENCE_MAX} sentences. "
 		"The <response> block must contain ONLY the final intro text. "
-		"Do NOT include any 'FACT:' or 'TRIVIA:' lines inside <response>. "
+		"Place FACT/TRIVIA lines only inside <facts> and keep <response> for the intro. "
 		"The <response> must be at least 200 characters. "
 		"Wrap the final spoken intro inside <response>...</response>. "
-		"Output only the <facts> and <response> tags, and nothing else."
+		"Output only the <facts> and <response> tags."
 	)
 
 	prompt = base
@@ -453,8 +519,8 @@ def build_prompt(
 	prompt += "Song details:\n"
 	prompt += details_text + "\n\n"
 
-	prompt += "Do not write a vague or generic intro; "
-	prompt += "specific facts and small stories are more important than hype.\n"
+	prompt += "Write a specific, concrete intro with small stories; "
+	prompt += "facts and small stories are more important than hype.\n"
 
 	if song:
 		prompt += "Again here is a brief file summary.\n"

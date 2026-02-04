@@ -17,6 +17,17 @@
 - Add boilerplate stripping tests for "another enchanting journey" variants.
 - Highlight the `[say]` command output block with `rich` to improve readability.
 - Show the filtered intro text once and stop reprinting it in the `[say]` block.
+- Reject boilerplate and code-fenced intros during relaxed fallback so retries trigger.
+- Tell the LLM to avoid repetitive phrasing in DJ intros.
+- Strip code fences from LLM intros and tell the model not to emit markdown fences.
+- Add an LLM refine pass to salvage boilerplate or repetitive intros instead of rejecting them.
+- Treat invalid or missing <facts> blocks as non-fatal and strip boilerplate instead of rejecting.
+- Rephrase LLM prompts to avoid "Do not" phrasing and use positive instructions.
+- Replace "without" phrasing in LLM prompts with positive wording.
+- Update intro prompt wording to emphasize specific facts and ASCII/ISO 8859-1 punctuation.
+- Remove negative phrasing from LLM prompts.
+- Update intro opening guidance to emphasize audience engagement.
+- Restore "non-repetitive" wording in LLM prompts per preference.
 - Update docs to reference `pip_requirements.txt` after renaming dependencies file.
 - Format spoken DJ intro output with borders, indentation, and color in terminal output.
 - Use `rich` for DJ intro terminal formatting.

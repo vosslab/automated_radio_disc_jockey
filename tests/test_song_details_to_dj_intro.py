@@ -89,6 +89,31 @@ def test_sanitize_intro_text_strips_facts_and_tags() -> None:
 
 
 #============================================
+def test_sanitize_intro_text_strips_code_fences() -> None:
+	raw = "```xml\nHello there\n```"
+	cleaned = song_details_to_dj_intro._sanitize_intro_text(raw)
+	assert "Hello there" in cleaned
+
+
+#============================================
+def test_starts_with_boilerplate_detects_welcome() -> None:
+	text = "Ladies and gentlemen, welcome to the show."
+	assert song_details_to_dj_intro._starts_with_boilerplate(text) is True
+	stripped = song_details_to_dj_intro._strip_leading_boilerplate_sentence(
+		"Ladies and gentlemen, welcome to the show. Here we go."
+	)
+	assert stripped == "Here we go."
+
+
+#============================================
+def test_finalize_intro_text_accepts_clean_intro() -> None:
+	song = SimpleNamespace(title="Magic")
+	text = "A bright tune carries the story forward. It glows with warmth. The night turns to Magic."
+	result = song_details_to_dj_intro._finalize_intro_text(text, song, None, False)
+	assert result is not None
+
+
+#============================================
 def test_trim_intro_cuts_at_word_boundary() -> None:
 	text = "hello world again"
 	assert song_details_to_dj_intro._trim_intro(text, 10) == "hello"
