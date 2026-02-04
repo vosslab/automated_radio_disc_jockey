@@ -10,6 +10,12 @@ import mutagen.flac
 import mutagen.easyid3
 from rich import print
 from rich.markup import escape
+try:
+	from rich.console import Console
+	RICH_CONSOLE = Console()
+except ImportError:
+	Console = None
+	RICH_CONSOLE = None
 
 # Local repo modules
 from cli_colors import Colors
@@ -57,7 +63,7 @@ def select_song(song_list: list, sample_size: int) -> str:
 	colors = Colors
 	sample_size = max(1, min(sample_size, len(song_list)))
 	choices = random.sample(song_list, sample_size)
-	print(f"Please select a song (1-{sample_size}):")
+	print(f"{colors.PINK}Please select a song (1-{sample_size}):{colors.ENDC}")
 	index = 1
 	for song in choices:
 		song_obj = song if isinstance(song, Song) else Song(song)
@@ -65,13 +71,16 @@ def select_song(song_list: list, sample_size: int) -> str:
 		index += 1
 
 	while True:
-		user_input = input("Enter number: ").strip()
+		if RICH_CONSOLE:
+			user_input = RICH_CONSOLE.input(f"{colors.CYAN}Enter number:{colors.ENDC} ").strip()
+		else:
+			user_input = input("Enter number: ").strip()
 		if user_input.isdigit():
 			selected = int(user_input) - 1
 			if 0 <= selected < sample_size:
 				chosen = choices[selected]
 				return chosen.path if isinstance(chosen, Song) else chosen
-		print(f"Please enter a number between 1 and {sample_size}.")
+		print(f"{colors.DARK_YELLOW}Please enter a number between 1 and {sample_size}.{colors.ENDC}")
 
 #============================================
 def select_song_list(song_list: list, sample_size: int) -> list:

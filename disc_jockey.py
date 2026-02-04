@@ -236,7 +236,7 @@ class DiscJockey:
 					panel_text,
 					title="DJ Introduction",
 					title_align="left",
-					border_style="magenta",
+					border_style="#7b12a1",
 					box=box.DOUBLE,
 				)
 			)
@@ -411,10 +411,15 @@ class DiscJockey:
 
 		best_intro = self._run_intro_referee(song, prev_song, candidates, details_text)
 		if best_intro:
-			return best_intro
+			polished = song_details_to_dj_intro.polish_intro_for_reading(
+				best_intro,
+				song,
+				self.model_name,
+			)
+			return polished or best_intro
 
-			print(f"{Colors.WARNING}Intro referee could not decide; using option {candidates[0][0]} as fallback.{Colors.ENDC}")
-			return candidates[0][1]
+		print(f"{Colors.WARNING}Intro referee could not decide; using option {candidates[0][0]} as fallback.{Colors.ENDC}")
+		return candidates[0][1]
 
 	#============================================
 	def _run_intro_referee(
@@ -602,13 +607,13 @@ class DiscJockey:
 			)
 		else:
 			print(f"{Colors.WARNING}Referee reply was missing a <winner> tag.{Colors.ENDC}")
-		if ref_reason:
-			escaped = escape(ref_reason)
-			print(f"{Colors.WARNING}Referee <reason> text (unparsed): {escaped}{Colors.ENDC}")
-		if raw_output:
-			snippet = raw_output.splitlines()
-			display = escape("\n".join(snippet[:6]))
-			print(f"{Colors.WARNING}Referee raw output preview:\n{display}{Colors.ENDC}")
+			if ref_reason:
+				escaped = escape(ref_reason)
+				print(f"{Colors.NAVY}Referee <reason> text (unparsed): {escaped}{Colors.ENDC}")
+			if raw_output:
+				snippet = raw_output.splitlines()
+				display = escape("\n".join(snippet[:6]))
+				print(f"{Colors.NAVY}Referee raw output preview:\n{display}{Colors.ENDC}")
 
 	#============================================
 	def _resolve_referee_winner(

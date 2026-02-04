@@ -18,6 +18,7 @@ class Colors:
 	PURPLE = "[#7b12a1]"
 	MAGENTA = "[#b30077]"
 	PINK = "[#cc0066]"
+	WHITE = "[#ffffff]"
 
 	HEADER = BLUE
 	OKBLUE = BLUE

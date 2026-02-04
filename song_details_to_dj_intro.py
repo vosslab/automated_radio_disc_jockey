@@ -232,11 +232,11 @@ def _finalize_intro_text(
 		return _refine_or_none(clean_intro, song, model_name, allow_refine, "repetition")
 
 	if not _title_is_mentioned(clean_intro, song.title or ""):
-		print(f"{Colors.WARNING}Intro missing song title; allowing output.{Colors.ENDC}")
-		if song.title:
-			amended = _append_title_if_missing(clean_intro, song.title)
-			if len(amended) <= MAX_INTRO_CHARS:
-				clean_intro = amended
+		print(f"{Colors.DARK_YELLOW}Intro missing song title; allowing output.{Colors.ENDC}")
+	if song.title:
+		amended = _append_title_if_missing(clean_intro, song.title)
+		if len(amended) <= MAX_INTRO_CHARS:
+			clean_intro = amended
 
 	return clean_intro
 
@@ -265,18 +265,27 @@ def _refine_intro_with_llm(
 	if not text:
 		return None
 	prompt = (
-		"You are rewriting a DJ intro to fix issues and reduce fluff. "
+		"Your nickname is the 'fluff reducer'"
+		"You are tasked trimming a DJ intro to fix issues and reduce fluff. "
 		"Use only the provided facts and rephrase the text. "
 		"Use plain text with simple formatting. "
 		"Keep it lively and non-repetitive. "
+		"Many intros contain nonsense at the beginning "
+		" rather than getting into the content. Please streamline the content. "
+		"The audience does not need to hear a list of names or lame awards, they want "
+		"interesting content, so scrap the fluff the pull out the diamonds. "
 		"Start with a song-specific line to get the audience engaged immediately. "
-		"Keep it to 5-7 sentences. "
 		"Trim filler phrases and focus on the most distinctive details. "
-		"Aim to reduce the length by about 25 percent. "
+		"Aim to reduce the length by about 25-50 percent. "
+		"Try and compress the text to reduce redundant content and repeat phrases. "
+		"Summarize, compress, drop boring names, remove repeated content, "
+		"and get to meat of the intro quicker. "
+		"Like do we really need to say 'Ladies and gentlemen' for every intro, NO! "
+		"We are in the middle of your play set, so please do not welcome your audience again. "
 		"Wrap only the revised intro inside <response>...</response>.\n\n"
 		f"Issue: {reason}\n"
-		"Intro text:\n"
-		f"{text}\n"
+		"Here is the extended Intro text:\n"
+		f"<intro text>{text}</intro text>\n"
 	)
 	refined = llm_wrapper.run_llm(prompt, model_name=model_name)
 	if not refined:
@@ -292,6 +301,41 @@ def _refine_intro_with_llm(
 	).strip()
 	candidate = candidate.strip("\"'").strip()
 	return candidate or None
+
+#============================================
+def polish_intro_for_reading(
+	intro_text: str,
+	song: audio_utils.Song,
+	model_name: str | None,
+) -> str | None:
+	"""
+	Run a final LLM cleanup pass after the referee selects an intro.
+	"""
+	if not intro_text:
+		return None
+
+	print(f"{Colors.SKY_BLUE}Cleaning selected intro with LLM to reduce fluff...{Colors.ENDC}")
+	before_chars, before_words, before_sentences = _intro_stats(intro_text)
+	refined = _refine_intro_with_llm(
+		intro_text,
+		song,
+		model_name,
+		"final pass before playback",
+	)
+	if refined:
+		after_chars, after_words, after_sentences = _intro_stats(refined)
+		print(
+			f"{Colors.NAVY}Intro stats (before/after): "
+			f"chars {before_chars}->{after_chars}, "
+			f"words {before_words}->{after_words}, "
+			f"sentences {before_sentences}->{after_sentences}{Colors.ENDC}"
+		)
+
+	candidate = refined or intro_text
+	final_intro = _finalize_intro_text(candidate, song, model_name, False)
+	if not final_intro and refined:
+		final_intro = _finalize_intro_text(intro_text, song, model_name, False)
+	return final_intro or candidate
 
 #============================================
 def _title_tokens(title: str) -> list[str]:
@@ -492,15 +536,20 @@ def prepare_intro_text(
 		prompt += "\n(**) IMPORTANT VALIDATION RULES:\n"
 		prompt += "- Put the FACT/TRIVIA lines inside <facts>...</facts>, outside <response>.\n"
 		prompt += "- The <response> must contain ONLY the final spoken intro.\n"
-		prompt += "- The <response> must be 3-10 sentences and at least 200 characters.\n"
+		prompt += "- Craft an interesting narrative for your radio show audience.\n"
+		prompt += "- Pull in unique and interesting facts for your response.\n"
+		prompt += "- Think of yourself as a DJ at the top of their craft and engagement.\n"
+		prompt += "- Did something inspire the lyrics of the song.\n"
+		prompt += "- Do the lyrics inspire any thoughts or unique ideas.\n"
+		prompt += "- The <response> must be 3-7 sentences and at least 200 characters.\n"
 		prompt += f"- Aim for {TARGET_SENTENCE_MIN}-{TARGET_SENTENCE_MAX} sentences.\n"
 		prompt += "- The <response> contains only the intro text; FACT/TRIVIA lines belong in <facts>.\n"
 		prompt += "- Output only <facts> and <response> tags, nothing else.\n"
 
-	print(f"{Colors.OKBLUE}Sending prompt to LLM...{Colors.ENDC}")
+	print(f"{Colors.SKY_BLUE}Sending prompt to LLM...{Colors.ENDC}")
 	dj_intro = llm_wrapper.run_llm(prompt, model_name=model_name)
 
-	print(f"{Colors.OKGREEN}Received LLM output; extracting <response> block...{Colors.ENDC}")
+	print(f"{Colors.LIME_GREEN}Received LLM output; extracting <response> block...{Colors.ENDC}")
 	def _use_relaxed_intro(reason: str) -> str | None:
 		if not allow_fallback:
 			return None
@@ -513,15 +562,15 @@ def prepare_intro_text(
 	# Use the generic XML extractor for the response tag
 	facts_block = llm_wrapper.extract_xml_tag(dj_intro, "facts")
 	if not facts_block:
-		print(f"{Colors.WARNING}No <facts> block detected; continuing anyway.{Colors.ENDC}")
+		print(f"{Colors.DARK_YELLOW}No <facts> block detected; continuing anyway.{Colors.ENDC}")
 	facts_ok, facts_reason = _validate_facts_block(facts_block)
 	if not facts_ok:
-		print(f"{Colors.WARNING}Invalid <facts> block ({escape(facts_reason)}); continuing anyway.{Colors.ENDC}")
+		print(f"{Colors.DARK_YELLOW}Invalid <facts> block ({escape(facts_reason)}); continuing anyway.{Colors.ENDC}")
 
 	clean_intro = llm_wrapper.extract_xml_tag(dj_intro, "response")
 
 	if clean_intro:
-		print(f"{Colors.OKBLUE}Cleaning intro with LLM to reduce fluff...{Colors.ENDC}")
+		print(f"{Colors.SKY_BLUE}Cleaning intro with LLM to reduce fluff...{Colors.ENDC}")
 		before_chars, before_words, before_sentences = _intro_stats(clean_intro)
 		refined_intro = _refine_intro_with_llm(
 			clean_intro,
@@ -532,7 +581,7 @@ def prepare_intro_text(
 		if refined_intro:
 			after_chars, after_words, after_sentences = _intro_stats(refined_intro)
 			print(
-				f"{Colors.OKBLUE}Intro stats (before/after): "
+				f"{Colors.NAVY}Intro stats (before/after): "
 				f"chars {before_chars}->{after_chars}, "
 				f"words {before_words}->{after_words}, "
 				f"sentences {before_sentences}->{after_sentences}{Colors.ENDC}"
@@ -696,12 +745,12 @@ def main() -> None:
 			lyrics_text=lyrics_text,
 		)
 
-	print(f"{Colors.OKBLUE}Sending prompt to LLM...{Colors.ENDC}")
+	print(f"{Colors.SKY_BLUE}Sending prompt to LLM...{Colors.ENDC}")
 	raw = llm_wrapper.run_llm(prompt)
 	intro = llm_wrapper.extract_response_text(raw)
 	if intro:
-		print(f"{Colors.OKGREEN}DJ Intro:{Colors.ENDC}")
-		print(f"{Colors.OKCYAN}{escape(intro)}{Colors.ENDC}")
+		print(f"{Colors.PURPLE}DJ Intro:{Colors.ENDC}")
+		print(f"{Colors.WHITE}{escape(intro)}{Colors.ENDC}")
 	else:
 		print(f"{Colors.FAIL}No <response> block found in LLM output.{Colors.ENDC}")
 

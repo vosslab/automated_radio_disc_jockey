@@ -22,6 +22,9 @@ except ImportError:
 	Console = None
 	RICH_CONSOLE = None
 
+# Local repo modules
+from cli_colors import Colors
+
 DEFAULT_ENGINE = "say"
 TTS_VOLUME_GAIN = 1.15
 
@@ -107,7 +110,7 @@ def _strip_boilerplate_intro(text: str) -> str:
 def _print_say_command(command: list[str], text: str, show_text: bool = False) -> None:
 	command_prefix = " ".join(command[:-1] if command and text and command[-1] == text else command)
 	if RICH_CONSOLE:
-		RICH_CONSOLE.print(f"[say] running: {command_prefix}")
+		RICH_CONSOLE.print(f"{Colors.WHITE}[say] running: {command_prefix}{Colors.ENDC}")
 	else:
 		print(f"[say] running: {command_prefix}")
 

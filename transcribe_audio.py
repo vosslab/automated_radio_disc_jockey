@@ -27,7 +27,7 @@ def _ensure_model(model_path: str, model_url: str, allow_download: bool) -> bool
 	if os.path.isfile(model_path):
 		return True
 	if not allow_download:
-		print(f"{Colors.WARNING}Whisper model missing: {escape(model_path)}{Colors.ENDC}")
+		print(f"{Colors.DARK_ORANGE}Whisper model missing: {escape(model_path)}{Colors.ENDC}")
 		return False
 
 	os.makedirs(os.path.dirname(model_path), exist_ok=True)
@@ -41,7 +41,7 @@ def _ensure_model(model_path: str, model_url: str, allow_download: bool) -> bool
 		print(f"{Colors.FAIL}Model download requires curl or wget.{Colors.ENDC}")
 		return False
 
-	print(f"{Colors.OKBLUE}Downloading whisper model: {escape(os.path.basename(model_path))}{Colors.ENDC}")
+	print(f"{Colors.SKY_BLUE}Downloading whisper model: {escape(os.path.basename(model_path))}{Colors.ENDC}")
 	result = subprocess.run(command, capture_output=True, text=True)
 	if result.returncode != 0:
 		error_text = result.stderr.strip() or result.stdout.strip()
@@ -79,12 +79,12 @@ def transcribe_audio(
 	if not audio_path:
 		return None
 	if not os.path.isfile(audio_path):
-		print(f"{Colors.WARNING}Audio file not found: {escape(audio_path)}{Colors.ENDC}")
+		print(f"{Colors.LIGHT_ORANGE}Audio file not found: {escape(audio_path)}{Colors.ENDC}")
 		return None
 
 	whisper_cli = _resolve_whisper_cli()
 	if not whisper_cli:
-		print(f"{Colors.WARNING}whisper-cli not found in PATH; skipping lyrics.{Colors.ENDC}")
+		print(f"{Colors.DARK_ORANGE}whisper-cli not found in PATH; skipping lyrics.{Colors.ENDC}")
 		return None
 
 	whisper_root = os.path.expanduser(whisper_path or os.environ.get("WHISPER_PATH", "") or DEFAULT_WHISPER_PATH)
@@ -103,7 +103,7 @@ def transcribe_audio(
 	if not audio_wav_path:
 		return None
 
-	print(f"{Colors.OKBLUE}Transcribe with whisper.cpp{Colors.ENDC}")
+	print(f"{Colors.SKY_BLUE}Transcribe with whisper.cpp{Colors.ENDC}")
 	temp_dir = os.path.dirname(audio_wav_path)
 	wav_name = os.path.basename(audio_wav_path)
 	whisper_cmd = [
@@ -135,11 +135,11 @@ def transcribe_audio(
 
 	stderr_text = whisper_result.stderr or ""
 	if re.search(r"metal backend|ggml_metal_init", stderr_text, flags=re.IGNORECASE):
-		print(f"{Colors.OKGREEN}Metal backend: detected{Colors.ENDC}")
+		print(f"{Colors.LIME_GREEN}Metal backend: detected{Colors.ENDC}")
 	else:
-		print(f"{Colors.WARNING}Metal backend: not detected{Colors.ENDC}")
+		print(f"{Colors.DARK_YELLOW}Metal backend: not detected{Colors.ENDC}")
 		if not env.get("GGML_METAL_PATH_RESOURCES"):
-			print(f"{Colors.WARNING}Hint: set GGML_METAL_PATH_RESOURCES=\"$(brew --prefix whisper-cpp)/share/whisper-cpp\"{Colors.ENDC}")
+			print(f"{Colors.DARK_YELLOW}Hint: set GGML_METAL_PATH_RESOURCES=\"$(brew --prefix whisper-cpp)/share/whisper-cpp\"{Colors.ENDC}")
 
 	transcript_path = os.path.join(temp_dir, f"{wav_name}.txt")
 	transcript = ""
@@ -156,6 +156,6 @@ def transcribe_audio(
 		pass
 
 	if not transcript:
-		print(f"{Colors.WARNING}No transcript produced for {escape(os.path.basename(audio_path))}.{Colors.ENDC}")
+		print(f"{Colors.LIGHT_ORANGE}No transcript produced for {escape(os.path.basename(audio_path))}.{Colors.ENDC}")
 		return None
 	return transcript

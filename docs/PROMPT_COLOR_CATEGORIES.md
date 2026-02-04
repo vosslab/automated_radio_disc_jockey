@@ -18,6 +18,7 @@ Use these colors consistently so logs remain easy to scan.
 - `PURPLE` (`#7b12a1`): highlights for featured output blocks (for example DJ intro header)
 - `MAGENTA` (`#b30077`): optional or secondary info that should stand out
 - `PINK` (`#cc0066`): user-facing emphasis for non-error alerts or reminders
+- `WHITE` (`#ffffff`): neutral text meant to stay low-contrast next to colored output
 
 ## Usage Rules
 - Prefer `GREEN` for normal success, `LIME GREEN` for soft success, and `LIGHT ORANGE` for warnings.

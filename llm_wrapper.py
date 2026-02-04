@@ -206,8 +206,8 @@ def query_ollama_model(prompt: str, model_name: str) -> str:
 	Returns:
 		str: Model response (may be empty on error).
 	"""
-	print(f"{Colors.OKBLUE}Sending prompt to LLM with model {escape(model_name)}...{Colors.ENDC}")
-	print(f"{Colors.WARNING}Waiting for response...{Colors.ENDC}")
+	print(f"{Colors.SKY_BLUE}Sending prompt to LLM with model {escape(model_name)}...{Colors.ENDC}")
+	print(f"{Colors.TEAL}Waiting for response...{Colors.ENDC}")
 	command = ["ollama", "run", model_name, prompt]
 	start_time = time.time()
 	result = subprocess.run(command, capture_output=True, text=True)
@@ -217,7 +217,7 @@ def query_ollama_model(prompt: str, model_name: str) -> str:
 		return ""
 	output = result.stdout.strip()
 	print(
-		f"{Colors.OKGREEN}LLM response length: {len(output)} characters "
+		f"{Colors.NAVY}LLM response length: {len(output)} characters "
 		f"({elapsed:.2f}s).{Colors.ENDC}"
 	)
 	return output
@@ -299,8 +299,8 @@ def run_llm(
 	if chosen == "afm":
 		try:
 			import config_apple_models
-			print(f"{Colors.OKBLUE}Sending prompt to Apple Foundation Models...{Colors.ENDC}")
-			print(f"{Colors.WARNING}Waiting for response...{Colors.ENDC}")
+			print(f"{Colors.SKY_BLUE}Sending prompt to Apple Foundation Models...{Colors.ENDC}")
+			print(f"{Colors.TEAL}Waiting for response...{Colors.ENDC}")
 			response = config_apple_models.run_apple_model(
 				prompt,
 				max_tokens=max_tokens or 1200,

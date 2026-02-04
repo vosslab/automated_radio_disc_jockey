@@ -291,14 +291,14 @@ class Metadata:
 		Fetches Wikipedia summaries for the song, album, and artist.
 		Updates the class attributes with the fetched data.
 		"""
-		print(f"{Colors.OKBLUE}Searching Wikipedia for:{Colors.ENDC}\n{self}")
+		print(f"{Colors.SKY_BLUE}Searching Wikipedia for:{Colors.ENDC}\n{self}")
 
 		# Fetch song info
 		search_title = self._clean_title(self.title)
-		print(f"{Colors.OKBLUE}Searching song page for '{escape(search_title)}'...{Colors.ENDC}")
+		print(f"{Colors.SKY_BLUE}Searching song page for '{escape(search_title)}'...{Colors.ENDC}")
 		_, self.song_url, self.song_summary = self.search_wikipedia(f"{search_title} song by {self.artist}")
 		if self.song_summary:
-			print(f"{Colors.OKGREEN}Received song summary ({len(self.song_summary)} chars).{Colors.ENDC}")
+			print(f"{Colors.LIME_GREEN}Received song summary ({len(self.song_summary)} chars).{Colors.ENDC}")
 		if not self.song_summary:
 			lfm_url, lfm_desc = self._fetch_lastfm_wiki(self.artist, search_title, kind="song")
 			if lfm_desc:
@@ -316,10 +316,10 @@ class Metadata:
 		# Modify artist search query if the name is short (3 characters or fewer)
 		artist_query = f"the artist {self.artist}"
 		# Try searching with "the artist" first
-		print(f"{Colors.OKBLUE}Searching artist page for '{escape(self.artist)}'...{Colors.ENDC}")
+		print(f"{Colors.SKY_BLUE}Searching artist page for '{escape(self.artist)}'...{Colors.ENDC}")
 		_, self.artist_url, self.artist_summary = self.search_wikipedia(artist_query)
 		if self.artist_summary:
-			print(f"{Colors.OKGREEN}Received artist summary ({len(self.artist_summary)} chars).{Colors.ENDC}")
+			print(f"{Colors.LIME_GREEN}Received artist summary ({len(self.artist_summary)} chars).{Colors.ENDC}")
 		if not self.artist_summary:
 			_, self.artist_url, self.artist_summary = self.search_wikipedia(self.artist)
 
@@ -339,12 +339,15 @@ class Metadata:
 
 		# Skip album lookup if it's a compilation
 		if self.is_compilation:
-			print(f"Skipping Wikipedia lookup for album '{escape(self.album)}' (detected as a compilation).")
+			print(
+				f"{Colors.DARK_YELLOW}Skipping Wikipedia lookup for album "
+				f"'{escape(self.album)}' (detected as a compilation).{Colors.ENDC}"
+			)
 		else:
-			print(f"{Colors.OKBLUE}Searching album page for '{escape(self.album)}'...{Colors.ENDC}")
+			print(f"{Colors.SKY_BLUE}Searching album page for '{escape(self.album)}'...{Colors.ENDC}")
 			_, self.album_url, self.album_summary = self.search_wikipedia(f"{self.album} album by {self.artist}")
 			if self.album_summary:
-				print(f"{Colors.OKGREEN}Received album summary ({len(self.album_summary)} chars).{Colors.ENDC}")
+				print(f"{Colors.LIME_GREEN}Received album summary ({len(self.album_summary)} chars).{Colors.ENDC}")
 			if not self.album_summary:
 				lfm_url, lfm_desc = self._fetch_lastfm_wiki(self.artist, self.album, kind="album")
 				if lfm_desc:

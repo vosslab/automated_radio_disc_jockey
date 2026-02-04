@@ -68,6 +68,9 @@
 - Fix Wikipedia lookup logging to use shared `Colors` constants after centralizing CLI colors.
 - Remove the stray shebang from `audio_wav.py` and replace `audioop` usage with a local channel-conversion helper to satisfy lint checks.
 - Map CLI colors to the RGB hex palette and use TEAL for lyric character stats output.
+- Expand CLI color usage to cover the full RGB palette (including white) across prompts, external-service logs, and debug lines.
+- Add a final LLM cleanup pass after the intro referee selects an option, reusing the existing fluff-reduction prompt.
+- Ask the fluff reducer to compress intros and reduce redundant phrasing.
 
 ## 2026-02-03
 - Replace the wikipedia package with direct API calls and remove the BeautifulSoup dependency.
