@@ -111,6 +111,18 @@ def is_reason_acceptable(reason: str, candidates: list[Song]) -> bool:
 	return True
 
 #============================================
+def _preview_reason(reason: str, max_chars: int = 160) -> str:
+	"""
+	Return a short, single-line preview of the reason text.
+	"""
+	if not reason:
+		return ""
+	cleaned = re.sub(r"\s+", " ", reason.strip())
+	if len(cleaned) <= max_chars:
+		return cleaned
+	return cleaned[: max_chars - 3].rstrip() + "..."
+
+#============================================
 def build_fallback_reason(choice_text: str, chosen_song: Song | None, candidates: list[Song]) -> str:
 	"""
 	Build a short, human-readable fallback reason when the LLM output is unusable.
@@ -284,12 +296,23 @@ def choose_next_song(current_song: Song, song_list: list[str], sample_size: int,
 	reason = llm_wrapper.extract_xml_tag(raw, "reason")
 
 	if not is_reason_acceptable(reason, candidate_songs):
+		preview = _preview_reason(reason)
+		if preview:
+			print(f"{Colors.WARNING}LLM reason rejected: {escape(preview)}{Colors.ENDC}")
+		else:
+			print(f"{Colors.WARNING}LLM reason rejected: (empty){Colors.ENDC}")
 		print(f"{Colors.WARNING}LLM reason was placeholder or shorthand; retrying for a readable explanation.{Colors.ENDC}")
 		retry_prompt = build_selection_prompt(current_song, candidate_songs)
 		raw_retry = llm_wrapper.run_llm(retry_prompt, model_name=model_name)
 		raw_choice_retry = llm_wrapper.extract_xml_tag(raw_retry, "choice")
 		choice_retry = clean_llm_choice(raw_choice_retry)
 		reason_retry = llm_wrapper.extract_xml_tag(raw_retry, "reason")
+		if not is_reason_acceptable(reason_retry, candidate_songs):
+			preview_retry = _preview_reason(reason_retry)
+			if preview_retry:
+				print(f"{Colors.WARNING}Retry reason rejected: {escape(preview_retry)}{Colors.ENDC}")
+			else:
+				print(f"{Colors.WARNING}Retry reason rejected: (empty){Colors.ENDC}")
 		if is_reason_acceptable(reason_retry, candidate_songs):
 			if choice_retry:
 				choice = choice_retry

@@ -54,9 +54,6 @@ def parse_args() -> argparse.Namespace:
 	parser.add_argument("-r", "--tts-speed", dest="tts_speed", type=float, default=1.2, help="Playback speed multiplier for the DJ intro.")
 	parser.add_argument("--tts-engine", choices=["say", "gtts", "pyttsx3"], default="say", help="TTS engine to use for DJ intros (default: macOS say).")
 	parser.add_argument("-t", "--testing", dest="testing", action="store_true", help="Testing mode: play only the first 20 seconds of each song.")
-	parser.add_argument("--show-intro-cleanup", dest="show_intro_cleanup", action="store_true", help="Print before/after intro text during LLM cleanup.")
-	parser.add_argument("--hide-intro-cleanup", dest="show_intro_cleanup", action="store_false", help="Hide before/after intro text during LLM cleanup.")
-	parser.set_defaults(show_intro_cleanup=False)
 	return parser.parse_args()
 
 #============================================
@@ -73,7 +70,6 @@ class DiscJockey:
 		self.history = HistoryLogger()
 		self.model_name = llm_wrapper.get_default_model_name()
 		tts_helpers.DEFAULT_ENGINE = args.tts_engine
-		self.show_intro_cleanup = args.show_intro_cleanup
 
 	#============================================
 	def log_intro(self, song: audio_utils.Song, intro: str) -> None:
@@ -349,8 +345,8 @@ class DiscJockey:
 			else:
 				if len(text) < 200:
 					return (False, "too short (<200 chars)")
-				if len(text.split()) < 35:
-					return (False, "too short (<35 words)")
+				if len(text.split()) < 30:
+					return (False, "too short (<30 words)")
 				if sentence_count < 3:
 					return (False, "not enough sentences (<3)")
 
@@ -370,7 +366,6 @@ class DiscJockey:
 					model_name=self.model_name,
 					details_text=details_text,
 					lyrics_text=lyrics_text,
-					show_cleanup=self.show_intro_cleanup,
 				)
 				if not intro:
 					print(f"{Colors.WARNING}Intro option {label} attempt {attempt + 1} rejected: empty intro{Colors.ENDC}")
@@ -420,7 +415,6 @@ class DiscJockey:
 				best_intro,
 				song,
 				self.model_name,
-				show_cleanup=self.show_intro_cleanup,
 			)
 			return polished or best_intro
 

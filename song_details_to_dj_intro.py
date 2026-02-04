@@ -262,13 +262,11 @@ def _refine_intro_with_llm(
 	song: audio_utils.Song,
 	model_name: str | None,
 	reason: str,
-	show_cleanup: bool = False,
 ) -> str | None:
 	if not text:
 		return None
-	if show_cleanup:
-		print(f"{Colors.OKMAGENTA}Intro before cleanup:{Colors.ENDC}")
-		print(f"{Colors.WHITE}{escape(text)}{Colors.ENDC}")
+	print(f"{Colors.NAVY}Intro before:{Colors.ENDC}")
+	print(f"{Colors.NAVY}{escape(text)}{Colors.ENDC}")
 	template = prompt_loader.load_prompt("dj_intro_refine.txt")
 	prompt = prompt_loader.render_prompt(
 		template,
@@ -283,6 +281,7 @@ def _refine_intro_with_llm(
 	extracted = llm_wrapper.extract_xml_tag(refined, "response")
 	candidate = extracted or refined
 	candidate = _strip_code_fences(candidate)
+	candidate = re.sub(r"</?\s*intro\s*text\s*>", " ", candidate, flags=re.IGNORECASE)
 	candidate = re.sub(
 		r"^\s*here is the rewritten intro text\s*:?\s*",
 		"",
@@ -290,12 +289,8 @@ def _refine_intro_with_llm(
 		flags=re.IGNORECASE,
 	).strip()
 	candidate = candidate.strip("\"'").strip()
-	if show_cleanup:
-		if candidate:
-			print(f"{Colors.OKMAGENTA}Intro after cleanup:{Colors.ENDC}")
-			print(f"{Colors.WHITE}{escape(candidate)}{Colors.ENDC}")
-		else:
-			print(f"{Colors.WARNING}Cleanup LLM returned empty output; keeping original intro.{Colors.ENDC}")
+	if not candidate:
+		print(f"{Colors.WARNING}Cleanup LLM returned empty output; keeping original intro.{Colors.ENDC}")
 	return candidate or None
 
 #============================================
@@ -303,7 +298,6 @@ def polish_intro_for_reading(
 	intro_text: str,
 	song: audio_utils.Song,
 	model_name: str | None,
-	show_cleanup: bool = False,
 ) -> str | None:
 	"""
 	Run a final LLM cleanup pass after the referee selects an intro.
@@ -318,7 +312,6 @@ def polish_intro_for_reading(
 		song,
 		model_name,
 		"final pass before playback",
-		show_cleanup=show_cleanup,
 	)
 	if refined:
 		after_chars, after_words, after_sentences = _intro_stats(refined)
@@ -501,7 +494,6 @@ def prepare_intro_text(
 	details_text: str | None = None,
 	allow_fallback: bool = True,
 	lyrics_text: str | None = None,
-	show_cleanup: bool = False,
 ) -> str | None:
 	"""
 	Build a DJ prompt for a song, query the LLM, and extract the intro text.
@@ -562,7 +554,6 @@ def prepare_intro_text(
 			song,
 			model_name,
 			"polish for clarity and remove filler",
-			show_cleanup=show_cleanup,
 		)
 		if refined_intro:
 			after_chars, after_words, after_sentences = _intro_stats(refined_intro)
@@ -645,6 +636,10 @@ def build_prompt(
 				f"{Colors.TEAL}Lyrics chars (raw/clean): "
 				f"{len(lyrics_text)} / {len(clean_lyrics)}{Colors.ENDC}"
 			)
+			preview_words = clean_lyrics.split()[:8]
+			preview_text = " ".join(preview_words)
+			if preview_text:
+				print(f"{Colors.TEAL}Lyrics preview: {preview_text}{Colors.ENDC}")
 			lyrics_block = "Lyrics (auto-transcribed from audio; partial):\n"
 			lyrics_block += clean_lyrics + "\n\n"
 

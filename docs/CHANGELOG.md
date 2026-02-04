@@ -1,6 +1,12 @@
 # Changelog
 
 ## 2026-02-04
+- Show a short preview of rejected next-song reasons before retrying the LLM.
+- Add whisper-cli --suppress-nst to drop non-speech tokens like [MUSIC] in transcripts.
+- Strip stray <intro text> tags from the cleanup LLM output to avoid false intro rejections.
+- Stop printing the defluffed intro text twice during cleanup (keep only the "before" dump plus final output).
+- Show a short lyrics preview alongside lyric character counts.
+- Always print intro cleanup before/after text in a quieter, low-key format.
 - Remove default Apple Foundation Models instruction text and only use explicit instructions when provided.
 - Consolidate LLM prompt templates into five canonical files and drop strict reminder variants.
 - Add a disc jockey flag to print before/after intro text during the LLM cleanup pass.

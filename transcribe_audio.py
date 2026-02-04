@@ -112,6 +112,7 @@ def transcribe_audio(
 		model_path,
 		"--language",
 		"en",
+		"--suppress-nst",
 		"--output-txt",
 		"--print-colors",
 		wav_name,
